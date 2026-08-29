@@ -22,8 +22,8 @@ export class StellaCalDB extends Dexie {
     this.version(1).stores({
       regions: '++id, &name',
       doctors: '++id, name, regionId',
-      purchases: '++id, doctorId, regionId, year, month, [doctorId+year+month], product, dosage',
-      visits: '++id, doctorId, date, orderPlaced',
+      purchases: '++id, doctorId, [doctorId+year+month]',
+      visits: '++id, date',
     })
   }
 }
