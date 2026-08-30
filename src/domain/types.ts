@@ -59,4 +59,6 @@ export interface Visit {
   /** Optional ISO date string, `YYYY-MM-DD`. */
   followUpDate?: string
   orderPlaced: boolean
+  /** Optional free-text product name, recorded only when an order was placed. */
+  orderProduct?: string
 }

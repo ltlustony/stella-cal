@@ -87,3 +87,35 @@ export function groupVisitsByDate(
   }
   return byDate
 }
+
+/**
+ * Groups upcoming follow-ups by their due date, resolving doctor names so the
+ * calendar can surface a planned future visit. A follow-up is a visit that
+ * carries a `followUpDate`; only that future date is mapped (not the visit's
+ * own `date`). Visits without a follow-up date, or whose doctor is missing, are
+ * dropped.
+ */
+export function groupFollowUpsByDate(
+  visits: Visit[],
+  doctors: Doctor[],
+): Map<string, DoctorLabel[]> {
+  const doctorById = new Map<number, Doctor>()
+  for (const doctor of doctors) {
+    if (doctor.id !== undefined) doctorById.set(doctor.id, doctor)
+  }
+
+  const byDate = new Map<string, DoctorLabel[]>()
+  for (const visit of visits) {
+    if (!visit.followUpDate) continue
+    const doctor = doctorById.get(visit.doctorId)
+    if (!doctor || doctor.id === undefined) continue
+
+    const list = byDate.get(visit.followUpDate) ?? []
+    list.push({
+      doctorId: doctor.id,
+      doctorName: doctor.name,
+    })
+    byDate.set(visit.followUpDate, list)
+  }
+  return byDate
+}

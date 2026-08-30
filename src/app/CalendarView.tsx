@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { buildMonthGrid, groupVisitsByDate, toISODate } from '../domain/calendar'
+import { buildMonthGrid, groupFollowUpsByDate, groupVisitsByDate, toISODate } from '../domain/calendar'
 import type { Visit } from '../domain/types'
 import { visits as visitsRepo } from '../data/repositories'
 import { useApp } from './AppProvider'
@@ -32,12 +32,14 @@ export function CalendarView() {
   const [editingId, setEditingId] = useState<number | null>(null)
 
   // Form fields
+  const [formRegionFilter, setFormRegionFilter] = useState<number | 'all'>('all')
   const [doctorId, setDoctorId] = useState('')
   const [notes, setNotes] = useState('')
   const [outcome, setOutcome] = useState('')
   const [customOutcome, setCustomOutcome] = useState(false)
   const [followUpDate, setFollowUpDate] = useState('')
   const [orderPlaced, setOrderPlaced] = useState(false)
+  const [orderProduct, setOrderProduct] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -76,12 +78,20 @@ export function CalendarView() {
   )
 
   const doctorOptions = useMemo(
-    () => (regionFilter === 'all' ? doctorsByName : doctorsByName.filter((d) => d.regionId === regionFilter)),
-    [doctorsByName, regionFilter],
+    () =>
+      formRegionFilter === 'all'
+        ? doctorsByName
+        : doctorsByName.filter((d) => d.regionId === formRegionFilter),
+    [doctorsByName, formRegionFilter],
   )
 
   const byDate = useMemo(
     () => groupVisitsByDate(visits, visibleDoctors),
+    [visits, visibleDoctors],
+  )
+
+  const followUpsByDate = useMemo(
+    () => groupFollowUpsByDate(visits, visibleDoctors),
     [visits, visibleDoctors],
   )
 
@@ -115,12 +125,14 @@ export function CalendarView() {
 
   function resetForm() {
     setEditingId(null)
+    setFormRegionFilter('all')
     setDoctorId('')
     setNotes('')
     setOutcome('')
     setCustomOutcome(false)
     setFollowUpDate('')
     setOrderPlaced(false)
+    setOrderProduct('')
     setFormError(null)
   }
 
@@ -131,6 +143,8 @@ export function CalendarView() {
 
   function beginEdit(visit: Visit) {
     setEditingId(visit.id ?? null)
+    const doctor = state.doctors.find((d) => d.id === visit.doctorId)
+    setFormRegionFilter(doctor ? doctor.regionId : 'all')
     setDoctorId(String(visit.doctorId))
     setNotes(visit.notes)
     if (OUTCOMES.includes(visit.outcome)) {
@@ -142,6 +156,7 @@ export function CalendarView() {
     }
     setFollowUpDate(visit.followUpDate ?? '')
     setOrderPlaced(visit.orderPlaced)
+    setOrderProduct(visit.orderProduct ?? '')
     setFormError(null)
   }
 
@@ -157,6 +172,7 @@ export function CalendarView() {
       outcome,
       followUpDate: followUpDate || undefined,
       orderPlaced,
+      orderProduct: orderPlaced && orderProduct.trim() ? orderProduct.trim() : undefined,
     }
 
     if (editingId !== null) {
@@ -240,6 +256,7 @@ export function CalendarView() {
         <div className="grid grid-cols-7 gap-1">
           {grid.map((cell) => {
             const labels = byDate.get(cell.date) ?? []
+            const followUps = followUpsByDate.get(cell.date) ?? []
             const isToday = cell.date === todayIso
             return (
               <button
@@ -273,6 +290,23 @@ export function CalendarView() {
                     {labels.length > 2 && (
                       <div className="px-1 text-[10px] leading-4 text-slate-400">
                         +{labels.length - 2} more
+                      </div>
+                    )}
+                  </div>
+                )}
+                {followUps.length > 0 && (
+                  <div className="mt-0.5 w-full space-y-0.5">
+                    {followUps.slice(0, 2).map((label) => (
+                      <div
+                        key={`fu-${label.doctorId}`}
+                        className="w-full truncate rounded bg-amber-600/20 px-1 text-[10px] leading-4 text-amber-200"
+                      >
+                        ↻ {label.doctorName}
+                      </div>
+                    ))}
+                    {followUps.length > 2 && (
+                      <div className="px-1 text-[10px] leading-4 text-slate-400">
+                        +{followUps.length - 2} more
                       </div>
                     )}
                   </div>
@@ -319,6 +353,11 @@ export function CalendarView() {
                         </p>
                         {visit.outcome && (
                           <p className="mt-0.5 text-xs text-teal-300">{visit.outcome}</p>
+                        )}
+                        {visit.orderPlaced && visit.orderProduct && (
+                          <p className="mt-0.5 text-xs text-slate-300">
+                            Product: {visit.orderProduct}
+                          </p>
                         )}
                         {visit.notes && (
                           <p className="mt-1 whitespace-pre-wrap text-xs text-slate-400">
@@ -369,9 +408,32 @@ export function CalendarView() {
               <label className="block">
                 <span className="text-xs font-medium text-slate-400">Doctor</span>
                 <select
+                  value={formRegionFilter}
+                  onChange={(event) => {
+                    const next = event.target.value === 'all' ? 'all' : Number(event.target.value)
+                    setFormRegionFilter(next)
+                    if (next !== 'all') {
+                      const selectedDoctor = state.doctors.find((d) => d.id === Number(doctorId))
+                      if (doctorId && selectedDoctor && selectedDoctor.regionId !== next) {
+                        setDoctorId('')
+                      }
+                    }
+                  }}
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
+                >
+                  <option value="all">All regions</option>
+                  {[...state.regions]
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((region) => (
+                      <option key={region.id} value={region.id}>
+                        {region.name}
+                      </option>
+                    ))}
+                </select>
+                <select
                   value={doctorId}
                   onChange={(event) => setDoctorId(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
+                  className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
                 >
                   <option value="">Choose a doctor…</option>
                   {doctorOptions.map((doctor) => (
@@ -447,6 +509,19 @@ export function CalendarView() {
                 />
                 An order was placed on this visit
               </label>
+
+              {orderPlaced && (
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-400">Product ordered</span>
+                  <input
+                    type="text"
+                    value={orderProduct}
+                    onChange={(event) => setOrderProduct(event.target.value)}
+                    placeholder="e.g. Actein 600mg"
+                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-teal-600"
+                  />
+                </label>
+              )}
 
               {formError && <p className="text-sm text-red-300">{formError}</p>}
 

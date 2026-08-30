@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildMonthGrid, groupVisitsByDate } from './calendar'
+import { buildMonthGrid, groupFollowUpsByDate, groupVisitsByDate } from './calendar'
 import type { Doctor, Visit } from './types'
 
 describe('buildMonthGrid', () => {
@@ -93,5 +93,53 @@ describe('groupVisitsByDate', () => {
 
   it('returns an empty map when there are no visits', () => {
     expect(groupVisitsByDate([], doctors).size).toBe(0)
+  })
+})
+
+describe('groupFollowUpsByDate', () => {
+  const doctors: Doctor[] = [
+    { id: 1, name: '陳醫生診所', regionId: 1 },
+  ]
+
+  it('maps a visit with a follow-up date onto that future date', () => {
+    const visits: Visit[] = [
+      {
+        id: 10,
+        doctorId: 1,
+        date: '2026-08-30',
+        notes: '',
+        outcome: '',
+        orderPlaced: false,
+        followUpDate: '2026-09-05',
+      },
+    ]
+
+    const byDate = groupFollowUpsByDate(visits, doctors)
+
+    expect(byDate.get('2026-09-05')).toEqual([
+      { doctorId: 1, doctorName: '陳醫生診所' },
+    ])
+    expect(byDate.has('2026-08-30')).toBe(false)
+  })
+
+  it('ignores visits without a follow-up date', () => {
+    const visits: Visit[] = [
+      { doctorId: 1, date: '2026-08-30', notes: '', outcome: '', orderPlaced: false },
+    ]
+    expect(groupFollowUpsByDate(visits, doctors).size).toBe(0)
+  })
+
+  it('skips follow-ups whose doctor no longer exists', () => {
+    const visits: Visit[] = [
+      {
+        doctorId: 999,
+        date: '2026-08-30',
+        notes: '',
+        outcome: '',
+        orderPlaced: false,
+        followUpDate: '2026-09-05',
+      },
+    ]
+    expect(groupFollowUpsByDate(visits, doctors).has('2026-09-05')).toBe(false)
   })
 })

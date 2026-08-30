@@ -1,1 +1,8 @@
 @import 'tailwindcss';
+
+/* Let the browser render native widgets (date picker, select dropdown, etc.)
+   with a dark color scheme so their controls stay visible on the app's dark
+   backgrounds. */
+:root {
+  color-scheme: dark;
+}
