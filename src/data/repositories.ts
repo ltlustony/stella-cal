@@ -86,8 +86,20 @@ export const visits = {
     return { ...visit, id }
   },
 
+  async update(id: number, changes: Omit<Visit, 'id'>): Promise<void> {
+    await getDb().visits.update(id, changes)
+  },
+
+  async remove(id: number): Promise<void> {
+    await getDb().visits.delete(id)
+  },
+
   async all(): Promise<Visit[]> {
     return getDb().visits.toArray()
+  },
+
+  async byDate(date: string): Promise<Visit[]> {
+    return getDb().visits.where('date').equals(date).toArray()
   },
 
   async byDateRange(start: string, end: string): Promise<Visit[]> {

@@ -125,4 +125,51 @@ describe('visits repository', () => {
     const march = await visits.byDateRange('2024-03-01', '2024-03-31')
     expect(march).toHaveLength(2)
   })
+
+  it('update replaces an existing visit in place, keeping its id', async () => {
+    const region = await regions.upsert('九龍塘')
+    const doctor = await doctors.upsert('陳醫生診所', region.id!)
+
+    const before = await visits.add({ doctorId: doctor.id!, date: '2024-03-05', notes: 'a', outcome: 'No interest', orderPlaced: false })
+
+    await visits.update(before.id!, {
+      ...before,
+      outcome: 'Order placed',
+      orderPlaced: true,
+      followUpDate: '2024-04-01',
+    })
+
+    const all = await visits.all()
+    expect(all).toHaveLength(1)
+    expect(all[0].id).toBe(before.id)
+    expect(all[0].outcome).toBe('Order placed')
+    expect(all[0].orderPlaced).toBe(true)
+    expect(all[0].followUpDate).toBe('2024-04-01')
+  })
+
+  it('remove deletes a visit by id, leaving other visits intact', async () => {
+    const region = await regions.upsert('九龍塘')
+    const doctor = await doctors.upsert('陳醫生診所', region.id!)
+
+    const keep = await visits.add({ doctorId: doctor.id!, date: '2024-03-05', notes: 'keep', outcome: '', orderPlaced: false })
+    const drop = await visits.add({ doctorId: doctor.id!, date: '2024-03-20', notes: 'drop', outcome: '', orderPlaced: false })
+
+    await visits.remove(drop.id!)
+
+    const all = await visits.all()
+    expect(all).toHaveLength(1)
+    expect(all[0].id).toBe(keep.id)
+  })
+
+  it('byDate returns all visits on a single day', async () => {
+    const region = await regions.upsert('九龍塘')
+    const doctor = await doctors.upsert('陳醫生診所', region.id!)
+
+    await visits.add({ doctorId: doctor.id!, date: '2024-03-05', notes: 'a', outcome: '', orderPlaced: false })
+    await visits.add({ doctorId: doctor.id!, date: '2024-03-05', notes: 'b', outcome: '', orderPlaced: false })
+    await visits.add({ doctorId: doctor.id!, date: '2024-03-06', notes: 'c', outcome: '', orderPlaced: false })
+
+    const onFifth = await visits.byDate('2024-03-05')
+    expect(onFifth).toHaveLength(2)
+  })
 })

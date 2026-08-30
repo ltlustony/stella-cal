@@ -1,5 +1,6 @@
 import { lazy, Suspense, useRef, useState } from 'react'
 import { AppProvider, useApp } from './app/AppProvider'
+import { CalendarView } from './app/CalendarView'
 import { DoctorListView } from './app/DoctorListView'
 import { importWorkbookFromFile } from './data/excelImport'
 
@@ -9,12 +10,12 @@ const DoctorDetailView = lazy(() =>
   import('./app/DoctorDetailView').then((m) => ({ default: m.DoctorDetailView })),
 )
 
-type Tab = 'overview' | 'doctors'
+type Tab = 'calendar' | 'overview' | 'doctors'
 
 function Shell() {
   const { state, refreshOverviews } = useApp()
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<Tab>('calendar')
   const [selectedDoctorId, setSelectedDoctorId] = useState<number | null>(null)
   const [isImporting, setIsImporting] = useState(false)
   const [importSummary, setImportSummary] = useState<
@@ -89,6 +90,17 @@ function Shell() {
         <nav className="mb-5 flex gap-1 rounded-xl border border-slate-800 bg-slate-900/60 p-1">
           <button
             type="button"
+            onClick={() => setTab('calendar')}
+            className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
+              tab === 'calendar'
+                ? 'bg-teal-600/20 text-teal-200'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Calendar
+          </button>
+          <button
+            type="button"
             onClick={() => setTab('overview')}
             className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
               tab === 'overview'
@@ -114,7 +126,9 @@ function Shell() {
           </button>
         </nav>
 
-        {tab === 'overview' ? (
+        {tab === 'calendar' ? (
+          <CalendarView />
+        ) : tab === 'overview' ? (
           <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
             <h2 className="text-lg font-medium">Welcome</h2>
             <p className="mt-1 text-sm text-slate-400">
