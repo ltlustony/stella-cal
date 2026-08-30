@@ -4,9 +4,9 @@
 
 **Blocked by:** 02 — Excel import — parse → validate → unpivot → full replacement.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] All doctors are listed, filterable by region.
-- [ ] Doctor list is searchable by name.
-- [ ] Each doctor row shows the last visit date and a trend indicator (up/flat/down).
-- [ ] The purchase-trend computation (recent N complete months vs prior N months) is implemented as a pure, reusable function — this becomes the shared seam used by the priority list too.
+- [x] All doctors are listed, filterable by region.
+- [x] Doctor list is searchable by name.
+- [x] Each doctor row shows the last visit date and a trend indicator (up/flat/down).
+- [x] The purchase-trend computation (recent N complete months vs prior N months) is implemented as a pure, reusable function — this becomes the shared seam used by the priority list too.
