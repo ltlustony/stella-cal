@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
-  Line,
-  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -37,20 +37,23 @@ function seriesLabel(series: PurchaseChartSeries): string {
 }
 
 /**
- * A multi-series line chart of a doctor's purchase history.
+ * A grouped (clustered) column chart of a doctor's purchase history.
  *
- * Annual-only years (2018–2021, `month === 0`) are rendered in a separate left
- * panel on their own axis, so they are never mistaken for monthly bars. Monthly
- * data renders in the right panel. Both panels share one Y scale so quantity is
- * directly comparable, and negative values (returns) dip below the zero line.
+ * One thin column per product, side by side at each month. A month with no
+ * purchase renders no column — a real gap — so sparse data is never
+ * interpolated into a false trend. Negative quantities (returns/adjustments)
+ * extend below the zero line.
+ *
+ * Annual-only years (2018–2021, `month === 0`) render in their own left panel,
+ * never as monthly columns.
  */
-interface PurchaseLineChartProps {
+interface PurchaseColumnChartProps {
   data: PurchaseChartData
-  /** `'all'` or a specific product+dosage key to narrow the lines shown. */
+  /** `'all'` or a specific product+dosage key to narrow the columns shown. */
   productFilter?: 'all' | string
 }
 
-export function PurchaseLineChart({ data, productFilter = 'all' }: PurchaseLineChartProps) {
+export function PurchaseColumnChart({ data, productFilter = 'all' }: PurchaseColumnChartProps) {
   const series =
     productFilter === 'all'
       ? data.series
@@ -61,7 +64,7 @@ export function PurchaseLineChart({ data, productFilter = 'all' }: PurchaseLineC
   const annualSlots = data.slots.filter((s) => s.isAnnual)
   const monthlySlots = data.slots.filter((s) => !s.isAnnual)
 
-  /** Compute a shared Y domain from every visible series so both panels align. */
+  /** Shared Y domain across both panels so quantity is directly comparable. */
   const yDomain = useMemo((): [number, number] => {
     let min = 0
     let max = 0
@@ -112,7 +115,7 @@ export function PurchaseLineChart({ data, productFilter = 'all' }: PurchaseLineC
 
   const renderChart = (rows: Array<Record<string, unknown>>, many: boolean) => (
     <ResponsiveContainer width="100%" height={280}>
-      <LineChart data={rows} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
+      <BarChart data={rows} margin={{ top: 8, right: 12, bottom: 8, left: 0 }} barCategoryGap="20%">
         <CartesianGrid stroke={grid.stroke} strokeDasharray={grid.strokeDasharray} vertical={false} />
         <XAxis
           dataKey="label"
@@ -124,6 +127,7 @@ export function PurchaseLineChart({ data, productFilter = 'all' }: PurchaseLineC
         />
         <YAxis domain={yDomain} tick={axisTick} width={44} />
         <Tooltip
+          cursor={{ fill: '#1e293b', fillOpacity: 0.4 }}
           contentStyle={{
             backgroundColor: '#0f172a',
             border: '1px solid #334155',
@@ -134,19 +138,16 @@ export function PurchaseLineChart({ data, productFilter = 'all' }: PurchaseLineC
         />
         <ReferenceLine y={0} stroke="#64748b" strokeWidth={1} />
         {visibleSeries.map((s) => (
-          <Line
+          <Bar
             key={s.key}
-            type="monotone"
             dataKey={s.key}
             name={seriesLabel(s)}
-            stroke={colorFor(s.product)}
-            strokeWidth={2}
-            dot={rows.length <= 24 ? { r: 3 } : false}
-            connectNulls={false}
+            fill={colorFor(s.product)}
             isAnimationActive={false}
+            maxBarSize={24}
           />
         ))}
-      </LineChart>
+      </BarChart>
     </ResponsiveContainer>
   )
 
