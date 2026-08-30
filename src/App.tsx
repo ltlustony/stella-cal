@@ -1,8 +1,13 @@
-import { useRef, useState } from 'react'
+import { lazy, Suspense, useRef, useState } from 'react'
 import { AppProvider, useApp } from './app/AppProvider'
 import { DoctorListView } from './app/DoctorListView'
-import { DoctorDetailView } from './app/DoctorDetailView'
 import { importWorkbookFromFile } from './data/excelImport'
+
+// Lazy-loaded so the detail chart (and its Recharts dependency) stays out of the
+// initial bundle and only downloads when a doctor is opened.
+const DoctorDetailView = lazy(() =>
+  import('./app/DoctorDetailView').then((m) => ({ default: m.DoctorDetailView })),
+)
 
 type Tab = 'overview' | 'doctors'
 
@@ -167,10 +172,18 @@ function Shell() {
             )}
           </section>
         ) : selectedDoctorId !== null ? (
-          <DoctorDetailView
-            doctorId={selectedDoctorId}
-            onBack={() => setSelectedDoctorId(null)}
-          />
+          <Suspense
+            fallback={
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 text-center text-sm text-slate-400">
+                Loading chart…
+              </div>
+            }
+          >
+            <DoctorDetailView
+              doctorId={selectedDoctorId}
+              onBack={() => setSelectedDoctorId(null)}
+            />
+          </Suspense>
         ) : (
           <DoctorListView onSelect={setSelectedDoctorId} />
         )}
