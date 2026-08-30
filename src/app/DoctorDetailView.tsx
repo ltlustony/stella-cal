@@ -3,7 +3,7 @@ import type { Purchase } from '../domain/types'
 import { purchases } from '../data/repositories'
 import { buildPurchaseSeries, productKey, type ProductKey } from '../domain/chart'
 import { useApp } from './AppProvider'
-import { PurchaseColumnChart } from './PurchaseColumnChart'
+import { PurchaseChart } from './PurchaseChart'
 
 interface DoctorDetailViewProps {
   doctorId: number
@@ -100,11 +100,7 @@ export function DoctorDetailView({ doctorId, onBack }: DoctorDetailViewProps) {
       </div>
 
       <div className="p-4">
-        <PurchaseColumnChart data={chartData} productFilter={productFilter} />
-        <p className="mt-2 text-xs text-slate-500">
-          Annual-only years (2018–2021) are one yearly total in the Annual panel.
-          A column below zero is a return/adjustment; a month with no column had no purchase.
-        </p>
+        <PurchaseChart data={chartData} productFilter={productFilter} />
       </div>
     </section>
   )
