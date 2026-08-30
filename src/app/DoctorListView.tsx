@@ -19,7 +19,7 @@ function formatDate(iso: string | null): string {
   })
 }
 
-export function DoctorListView() {
+export function DoctorListView({ onSelect }: { onSelect: (doctorId: number) => void }) {
   const { state } = useApp()
   const [query, setQuery] = useState('')
   const [regionId, setRegionId] = useState<number | 'all'>('all')
@@ -81,8 +81,14 @@ export function DoctorListView() {
           {filtered.map((overview) => (
             <li
               key={overview.doctorId}
-              className="flex items-center gap-3 px-4 py-3 sm:justify-between"
+              className="relative flex cursor-pointer items-center gap-3 px-4 py-3 transition hover:bg-slate-800/40 sm:justify-between"
             >
+              <button
+                type="button"
+                onClick={() => onSelect(overview.doctorId)}
+                className="absolute inset-0"
+                aria-label={`Open ${overview.name}`}
+              />
               <div className="min-w-0">
                 <p className="truncate font-medium text-slate-100">{overview.name}</p>
                 <p className="text-xs text-slate-500">{overview.regionName}</p>

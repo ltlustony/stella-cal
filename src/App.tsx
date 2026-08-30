@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { AppProvider, useApp } from './app/AppProvider'
 import { DoctorListView } from './app/DoctorListView'
+import { DoctorDetailView } from './app/DoctorDetailView'
 import { importWorkbookFromFile } from './data/excelImport'
 
 type Tab = 'overview' | 'doctors'
@@ -9,6 +10,7 @@ function Shell() {
   const { state, refreshOverviews } = useApp()
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
+  const [selectedDoctorId, setSelectedDoctorId] = useState<number | null>(null)
   const [isImporting, setIsImporting] = useState(false)
   const [importSummary, setImportSummary] = useState<
     | { regions: number; doctors: number; purchases: number }
@@ -93,7 +95,10 @@ function Shell() {
           </button>
           <button
             type="button"
-            onClick={() => setTab('doctors')}
+            onClick={() => {
+              setTab('doctors')
+              setSelectedDoctorId(null)
+            }}
             className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
               tab === 'doctors'
                 ? 'bg-teal-600/20 text-teal-200'
@@ -161,8 +166,13 @@ function Shell() {
               </div>
             )}
           </section>
+        ) : selectedDoctorId !== null ? (
+          <DoctorDetailView
+            doctorId={selectedDoctorId}
+            onBack={() => setSelectedDoctorId(null)}
+          />
         ) : (
-          <DoctorListView />
+          <DoctorListView onSelect={setSelectedDoctorId} />
         )}
       </main>
     </div>
