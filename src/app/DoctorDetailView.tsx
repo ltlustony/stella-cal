@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Purchase } from '../domain/types'
 import { purchases } from '../data/repositories'
-import { buildPurchaseChart, productKey, type ProductKey } from '../domain/chart'
+import { buildPurchaseSeries, productKey, type ProductKey } from '../domain/chart'
 import { useApp } from './AppProvider'
-import { PurchaseBarChart } from './PurchaseBarChart'
+import { PurchaseLineChart } from './PurchaseLineChart'
 
 interface DoctorDetailViewProps {
   doctorId: number
@@ -44,8 +44,8 @@ export function DoctorDetailView({ doctorId, onBack }: DoctorDetailViewProps) {
     )
   }, [rows])
 
-  const points = useMemo(
-    () => buildPurchaseChart(rows, year === 'all' ? undefined : year),
+  const chartData = useMemo(
+    () => buildPurchaseSeries(rows, year === 'all' ? undefined : year),
     [rows, year],
   )
 
@@ -100,10 +100,10 @@ export function DoctorDetailView({ doctorId, onBack }: DoctorDetailViewProps) {
       </div>
 
       <div className="p-4">
-        <PurchaseBarChart points={points} productFilter={productFilter} />
+        <PurchaseLineChart data={chartData} productFilter={productFilter} />
         <p className="mt-2 text-xs text-slate-500">
-          Annual-only years (2018–2021) show one yearly total; negative bars are
-          returns/adjustments counted against the total.
+          Annual-only years (2018–2021) are one yearly total in the Annual panel,
+          not monthly bars; a line dipping below zero is a return/adjustment.
         </p>
       </div>
     </section>
