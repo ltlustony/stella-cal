@@ -85,6 +85,7 @@ Not stored — computed from visit + purchase data. Shows which doctors to prior
 | **Doctor List View** | All doctors, sorted/filtered by region and purchase volume. Shows last visit date and trend indicators. |
 | **Doctor Detail** | Single doctor: purchase history chart (month-over-month), all visit records, priority score. |
 | **Import View** | Excel file picker, validation, import progress. |
+| **Settings View** | Backup (download visits as JSON) and restore (merge a backup file back in), plus a reminder when no backup has been taken in 7 days. |
 
 ## Data Flow
 
@@ -100,9 +101,11 @@ Query: Visit Records + Purchase Records → Trend Analysis → Visit Prioritizat
 
 | Term | Definition |
 |---|---|
-| **Source of Truth** | The Excel file. Always contains the complete purchase history. |
+| **Purchase source of truth** | The Excel file. Always contains the complete purchase history and is re-imported on demand (ADR-003). |
+| **Visit source of truth** | The local IndexedDB store, backed up to a user-managed JSON file (ADR-006). Unlike purchases, visits cannot be rebuilt from the Excel. |
 | **Unpivoting** | Converting the pivot-table layout (one row per doctor×product with 60 month columns) into flat records (one row per doctor×product×month). |
 | **Full Replacement** | On import, all purchase records are cleared and re-inserted. Visit records are untouched. |
+| **Backup (Visit)** | A user-downloaded JSON file of all visit records, used to restore visits after site-data clearing or device loss. Restore merges by id and never overwrites existing visits. |
 | **Visit Gap** | Days since the last recorded visit to a doctor. Used in prioritization. |
 | **Purchase Trend** | Direction of purchase volume over recent months (up, flat, down). |
 | **Basic Quantity** | The base order size for a product (e.g., 30, 100, 200). Used for reference. |

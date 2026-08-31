@@ -46,7 +46,7 @@ async function loadAll(dispatch: (action: AppAction) => void): Promise<void> {
     asOf: todayAsOf(),
     trendMonths: 3,
   })
-  dispatch({ type: 'booted', regions: regionRows, doctors: doctorRows, overviews })
+  dispatch({ type: 'booted', regions: regionRows, doctors: doctorRows, overviews, visits: visitRows })
 }
 
 /**
@@ -63,6 +63,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async function boot() {
       try {
         await getDb().open()
+        // Ask the browser not to evict IndexedDB under disk pressure (best
+        // effort; may be denied). See ADR-006.
+        if (navigator.storage?.persist) {
+          try {
+            await navigator.storage.persist()
+          } catch {
+            // Persistence is best-effort; continue regardless.
+          }
+        }
         if (cancelled) return
         await loadAll(dispatch)
       } catch (err) {

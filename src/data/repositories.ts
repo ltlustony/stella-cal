@@ -80,10 +80,47 @@ export const purchases = {
   },
 }
 
+export function planVisitMerge(
+  existing: Visit[],
+  incoming: Visit[],
+): { toAdd: Visit[]; skipped: number } {
+  const existingIds = new Set<number>()
+  for (const v of existing) {
+    if (v.id !== undefined) existingIds.add(v.id)
+  }
+  const toAdd: Visit[] = []
+  let skipped = 0
+  for (const v of incoming) {
+    if (v.id !== undefined && existingIds.has(v.id)) {
+      skipped += 1
+    } else {
+      // Preserve the record id so a re-import of the same backup is
+      // idempotent. The browser's key generator advances past explicit ids,
+      // so later auto-increment inserts won't collide.
+      toAdd.push(v)
+    }
+  }
+  return { toAdd, skipped }
+}
+
 export const visits = {
   async add(visit: Omit<Visit, 'id'>): Promise<Visit> {
     const id = await getDb().visits.add(visit)
     return { ...visit, id }
+  },
+
+  /**
+   * Merge a backup set into the store: add only records whose `id` isn't
+   * already present (idempotent, never overwrites). Returns added/skipped
+   * counts.
+   */
+  async restore(incoming: Visit[]): Promise<{ added: number; skipped: number }> {
+    const existing = await getDb().visits.toArray()
+    const { toAdd, skipped } = planVisitMerge(existing, incoming)
+    if (toAdd.length > 0) {
+      await getDb().visits.bulkPut(toAdd)
+    }
+    return { added: toAdd.length, skipped }
   },
 
   async update(id: number, changes: Omit<Visit, 'id'>): Promise<void> {

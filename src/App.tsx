@@ -2,6 +2,9 @@ import { lazy, Suspense, useRef, useState } from 'react'
 import { AppProvider, useApp } from './app/AppProvider'
 import { CalendarView } from './app/CalendarView'
 import { DoctorListView } from './app/DoctorListView'
+import { PriorityListView } from './app/PriorityListView'
+import { SettingsView } from './app/SettingsView'
+import { getLastBackupAt, isBackupOverdue } from './data/backup'
 import { importWorkbookFromFile } from './data/excelImport'
 
 // Lazy-loaded so the detail chart (and its Recharts dependency) stays out of the
@@ -10,7 +13,7 @@ const DoctorDetailView = lazy(() =>
   import('./app/DoctorDetailView').then((m) => ({ default: m.DoctorDetailView })),
 )
 
-type Tab = 'calendar' | 'overview' | 'doctors'
+type Tab = 'calendar' | 'overview' | 'priority' | 'doctors' | 'settings'
 
 function Shell() {
   const { state, refreshOverviews } = useApp()
@@ -18,6 +21,9 @@ function Shell() {
   const [tab, setTab] = useState<Tab>('calendar')
   const [selectedDoctorId, setSelectedDoctorId] = useState<number | null>(null)
   const [isImporting, setIsImporting] = useState(false)
+  const [lastBackupAt, setLastBackupAt] = useState<number | null>(() =>
+    getLastBackupAt(),
+  )
   const [importSummary, setImportSummary] = useState<
     | { regions: number; doctors: number; purchases: number }
     | null
@@ -112,6 +118,17 @@ function Shell() {
           </button>
           <button
             type="button"
+            onClick={() => setTab('priority')}
+            className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
+              tab === 'priority'
+                ? 'bg-teal-600/20 text-teal-200'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Priority
+          </button>
+          <button
+            type="button"
             onClick={() => {
               setTab('doctors')
               setSelectedDoctorId(null)
@@ -124,10 +141,46 @@ function Shell() {
           >
             Doctors
           </button>
+          <button
+            type="button"
+            onClick={() => setTab('settings')}
+            className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
+              tab === 'settings'
+                ? 'bg-teal-600/20 text-teal-200'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Settings
+          </button>
         </nav>
+
+        {isBackupOverdue(lastBackupAt) && (
+          <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-amber-700 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">
+            <span>
+              No visit backup in the last 7 days. Back up to keep your visit
+              records safe.
+            </span>
+            <button
+              type="button"
+              onClick={() => setTab('settings')}
+              className="shrink-0 rounded-lg border border-amber-600 px-3 py-1.5 font-medium transition hover:bg-amber-600/20"
+            >
+              Back up
+            </button>
+          </div>
+        )}
 
         {tab === 'calendar' ? (
           <CalendarView />
+        ) : tab === 'settings' ? (
+          <SettingsView onBackedUp={setLastBackupAt} />
+        ) : tab === 'priority' ? (
+          <PriorityListView
+            onSelect={(doctorId) => {
+              setSelectedDoctorId(doctorId)
+              setTab('doctors')
+            }}
+          />
         ) : tab === 'overview' ? (
           <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
             <h2 className="text-lg font-medium">Welcome</h2>

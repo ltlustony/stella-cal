@@ -1,5 +1,5 @@
 import type { DoctorOverview } from '../domain/derived'
-import type { Doctor, Region } from '../domain/types'
+import type { Doctor, Region, Visit } from '../domain/types'
 
 /**
  * App state, held in a single reducer. `status` drives the boot/empty/ready
@@ -11,6 +11,7 @@ export interface AppState {
   regions: Region[]
   doctors: Doctor[]
   overviews: DoctorOverview[]
+  visits: Visit[]
 }
 
 export type AppAction =
@@ -19,6 +20,7 @@ export type AppAction =
       regions: Region[]
       doctors: Doctor[]
       overviews: DoctorOverview[]
+      visits: Visit[]
     }
   | { type: 'failed'; message: string }
 
@@ -27,6 +29,7 @@ export const initialState: AppState = {
   regions: [],
   doctors: [],
   overviews: [],
+  visits: [],
 }
 
 /**
@@ -42,6 +45,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         regions: action.regions,
         doctors: action.doctors,
         overviews: action.overviews,
+        visits: action.visits,
       }
     case 'failed':
       return { ...state, status: 'error', error: action.message }
