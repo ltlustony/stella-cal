@@ -25,9 +25,10 @@ describe('backup file format', () => {
       date: '2024-03-05',
       notes: 'discussed new product',
       outcome: 'Order placed',
-      followUpDate: '2024-04-01',
       orderPlaced: true,
       orderProduct: 'Actein',
+      status: 'completed',
+      time: '14:30',
     })
 
     const json = JSON.stringify(
@@ -38,6 +39,25 @@ describe('backup file format', () => {
     expect(parsed).toHaveLength(1)
     expect(parsed[0].id).toBe(visit.id)
     expect(parsed[0].notes).toBe('discussed new product')
+    expect(parsed[0].status).toBe('completed')
+    expect(parsed[0].time).toBe('14:30')
+  })
+
+  it('round-trips planned visits', () => {
+    const planned: Visit = {
+      id: 7,
+      doctorId: 1,
+      date: '2026-09-10',
+      notes: '',
+      outcome: '',
+      orderPlaced: false,
+      status: 'planned',
+      time: '10:00',
+    }
+    const json = JSON.stringify(buildBackupFile([planned]))
+    const parsed = parseBackupFile(json)
+    expect(parsed[0].status).toBe('planned')
+    expect(parsed[0].time).toBe('10:00')
   })
 
   it('rejects JSON that is not a backup file', () => {
@@ -50,10 +70,31 @@ describe('backup file format', () => {
 
   it('rejects a backup containing invalid visit records', () => {
     const bad = {
-      version: 1,
+      version: 2,
       kind: 'stella-cal-visits',
       exportedAt: 'x',
       visits: [{ doctorId: 'not-a-number' }],
+    }
+    expect(() => parseBackupFile(JSON.stringify(bad))).toThrow(
+      /no valid visit records/,
+    )
+  })
+
+  it('rejects records with an unknown visit status', () => {
+    const bad = {
+      version: 2,
+      kind: 'stella-cal-visits',
+      exportedAt: 'x',
+      visits: [
+        {
+          doctorId: 1,
+          date: '2026-09-10',
+          notes: '',
+          outcome: '',
+          orderPlaced: false,
+          status: 'cancelled',
+        },
+      ],
     }
     expect(() => parseBackupFile(JSON.stringify(bad))).toThrow(
       /no valid visit records/,

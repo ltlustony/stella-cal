@@ -52,18 +52,27 @@ A user-entered log of a sales visit to a doctor. Marked on the calendar.
 **Attributes:**
 - Doctor (FK → Doctor)
 - Date (the day of the visit)
+- Time (optional, `HH:mm` — a booked appointment time, carried over when a Planned Visit is completed)
 - Notes (free-text, what was discussed)
 - Outcome (e.g., "Order placed", "Follow-up needed", "No interest")
-- Follow-up Date (optional, when to visit again)
 - Order Placed (boolean, whether an order resulted from this visit)
 
-### Visit Plan (Derived)
-Not stored — computed from visit + purchase data. Shows which doctors to prioritize.
+### Planned Visit
+A stored visit that hasn't happened yet — created by tapping a future calendar day, or nominated from a completed visit's "Next visit date" field (ADR-007). Follow-ups on completed visits *are* Planned Visits; the two concepts are one record type.
 
-**Signals:**
-- Days since last visit (longer = higher priority)
-- Purchase trend (declining = higher priority)
-- Recent purchase volume (higher = higher priority)
+**Attributes:**
+- Doctor (FK → Doctor)
+- Date (the planned day; if it passes uncompleted, the plan becomes an Overdue Plan)
+- Time (optional, `HH:mm` booked time)
+- Notes (free-text, what to discuss)
+
+**Rules:**
+- Excluded from all derived analytics: last-visit date, purchase trend, and priority ranking only count completed visits.
+- Rendered as a dashed teal label on the calendar (amber once overdue).
+- Managed purely from the calendar: complete, reschedule, or delete (including overdue plans).
+
+### Overdue Plan
+A Planned Visit whose date has passed while still in `planned` status. Shown amber on the calendar from the day after its date; a plan due today stays actionable (teal-dashed). There is no separate follow-up reminder list — the calendar is the single home for due and overdue plans.
 
 ## Excel Structure
 
@@ -81,11 +90,11 @@ Not stored — computed from visit + purchase data. Shows which doctors to prior
 
 | View | Purpose |
 |---|---|
-| **Calendar View** | Month grid showing visit records. Doctor name on each visited day. Filterable by region. |
+| **Calendar View** | Month grid showing completed visits (solid teal labels) and Planned Visits (dashed labels; amber when overdue, 🕐 when a booked time is set). Filterable by region. Tapping a day logs or plans a visit. |
 | **Doctor List View** | All doctors, sorted/filtered by region and purchase volume. Shows last visit date and trend indicators. |
 | **Doctor Detail** | Single doctor: purchase history chart (month-over-month), all visit records, priority score. |
-| **Import View** | Excel file picker, validation, import progress. |
-| **Settings View** | Backup (download visits as JSON) and restore (merge a backup file back in), plus a reminder when no backup has been taken in 7 days. |
+| **Priority View** | Doctors to visit next, ranked by days-since-last-visit blended with purchase trend. Counts completed visits only. |
+| **Settings View** | Excel import, backup (download visits as JSON) and restore (merge a backup file back in), plus a reminder when no backup has been taken in 7 days. |
 
 ## Data Flow
 
@@ -103,6 +112,7 @@ Query: Visit Records + Purchase Records → Trend Analysis → Visit Prioritizat
 |---|---|
 | **Purchase source of truth** | The Excel file. Always contains the complete purchase history and is re-imported on demand (ADR-003). |
 | **Visit source of truth** | The local IndexedDB store, backed up to a user-managed JSON file (ADR-006). Unlike purchases, visits cannot be rebuilt from the Excel. |
+| **Follow-up** | A completed visit's nominated next visit date. Saving it creates a Planned Visit for the same doctor on that date (ADR-007); the plan then lives independently and is managed from the calendar. |
 | **Unpivoting** | Converting the pivot-table layout (one row per doctor×product with 60 month columns) into flat records (one row per doctor×product×month). |
 | **Full Replacement** | On import, all purchase records are cleared and re-inserted. Visit records are untouched. |
 | **Backup (Visit)** | A user-downloaded JSON file of all visit records, used to restore visits after site-data clearing or device loss. Restore merges by id and never overwrites existing visits. |

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildMonthGrid, groupFollowUpsByDate, groupVisitsByDate } from './calendar'
+import { buildMonthGrid, groupPlannedVisitsByDate, groupVisitsByDate } from './calendar'
 import type { Doctor, Visit } from './types'
 
 describe('buildMonthGrid', () => {
@@ -91,55 +91,61 @@ describe('groupVisitsByDate', () => {
     expect(byDate.has('2026-08-15')).toBe(false)
   })
 
+  it('excludes planned visits (they surface via groupPlannedVisitsByDate)', () => {
+    const byDate = groupVisitsByDate([visit({ status: 'planned' })], doctors)
+    expect(byDate.has('2026-08-15')).toBe(false)
+  })
+
   it('returns an empty map when there are no visits', () => {
     expect(groupVisitsByDate([], doctors).size).toBe(0)
   })
 })
 
-describe('groupFollowUpsByDate', () => {
+describe('groupPlannedVisitsByDate', () => {
   const doctors: Doctor[] = [
     { id: 1, name: '陳醫生診所', regionId: 1 },
   ]
 
-  it('maps a visit with a follow-up date onto that future date', () => {
+  it('maps planned visits onto their visit date with id and booked time', () => {
     const visits: Visit[] = [
       {
         id: 10,
         doctorId: 1,
-        date: '2026-08-30',
+        date: '2026-09-05',
         notes: '',
         outcome: '',
         orderPlaced: false,
-        followUpDate: '2026-09-05',
+        status: 'planned',
+        time: '14:30',
       },
     ]
 
-    const byDate = groupFollowUpsByDate(visits, doctors)
+    const byDate = groupPlannedVisitsByDate(visits, doctors)
 
     expect(byDate.get('2026-09-05')).toEqual([
-      { doctorId: 1, doctorName: '陳醫生診所' },
+      { visitId: 10, doctorId: 1, doctorName: '陳醫生診所', time: '14:30' },
     ])
-    expect(byDate.has('2026-08-30')).toBe(false)
   })
 
-  it('ignores visits without a follow-up date', () => {
+  it('excludes completed visits and visits without a status', () => {
     const visits: Visit[] = [
-      { doctorId: 1, date: '2026-08-30', notes: '', outcome: '', orderPlaced: false },
+      { doctorId: 1, date: '2026-09-05', notes: '', outcome: '', orderPlaced: false, status: 'completed' },
+      { doctorId: 1, date: '2026-09-06', notes: '', outcome: '', orderPlaced: false },
     ]
-    expect(groupFollowUpsByDate(visits, doctors).size).toBe(0)
+    expect(groupPlannedVisitsByDate(visits, doctors).size).toBe(0)
   })
 
-  it('skips follow-ups whose doctor no longer exists', () => {
+  it('skips planned visits whose doctor no longer exists', () => {
     const visits: Visit[] = [
       {
         doctorId: 999,
-        date: '2026-08-30',
+        date: '2026-09-05',
         notes: '',
         outcome: '',
         orderPlaced: false,
-        followUpDate: '2026-09-05',
+        status: 'planned',
       },
     ]
-    expect(groupFollowUpsByDate(visits, doctors).has('2026-09-05')).toBe(false)
+    expect(groupPlannedVisitsByDate(visits, doctors).has('2026-09-05')).toBe(false)
   })
 })

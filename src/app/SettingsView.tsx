@@ -12,6 +12,9 @@ import {
 
 interface SettingsViewProps {
   onBackedUp?: (timestamp: number) => void
+  /** Starts the shell-level Excel import flow. */
+  onStartImport?: () => void
+  isImporting?: boolean
 }
 
 interface RestorePlan {
@@ -20,7 +23,11 @@ interface RestorePlan {
   skipped: number
 }
 
-export function SettingsView({ onBackedUp }: SettingsViewProps) {
+export function SettingsView({
+  onBackedUp,
+  onStartImport,
+  isImporting = false,
+}: SettingsViewProps) {
   const { state, refreshOverviews } = useApp()
   const restoreInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -86,6 +93,24 @@ export function SettingsView({ onBackedUp }: SettingsViewProps) {
   return (
     <section className="space-y-5">
       <h2 className="text-lg font-medium">Settings</h2>
+
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+        <h3 className="font-medium">Import Excel</h3>
+        <p className="mt-1 text-sm text-slate-400">
+          Load your monthly Excel workbook to refresh doctors, regions, and
+          purchase history. Visit records are never touched (ADR-003).
+        </p>
+        {onStartImport && (
+          <button
+            type="button"
+            onClick={onStartImport}
+            disabled={isImporting}
+            className="mt-4 rounded-lg border border-teal-600 bg-teal-600/10 px-3 py-2 text-sm font-medium text-teal-200 transition hover:bg-teal-600/20 disabled:opacity-50"
+          >
+            {isImporting ? 'Importing…' : 'Import Excel'}
+          </button>
+        )}
+      </div>
 
       <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
         <h3 className="font-medium">Back up visit records</h3>

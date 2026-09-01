@@ -48,6 +48,9 @@ export interface Purchase {
   quantity: number
 }
 
+/** The lifecycle status of a visit. See glossary: Planned Visit / Visit Record. */
+export type VisitStatus = 'planned' | 'completed'
+
 /** A user-entered log of a sales visit to a doctor, marked on the calendar. */
 export interface Visit {
   id?: number
@@ -56,9 +59,18 @@ export interface Visit {
   date: string
   notes: string
   outcome: string
-  /** Optional ISO date string, `YYYY-MM-DD`. */
-  followUpDate?: string
   orderPlaced: boolean
   /** Optional free-text product name, recorded only when an order was placed. */
   orderProduct?: string
+  /**
+   * Whether the visit is a forward plan or a done event. `undefined` means
+   * completed, so records written before this field existed stay valid.
+   * Planned visits are excluded from last-visit / trend / priority analytics.
+   */
+  status?: VisitStatus
+  /**
+   * Optional booked time of day, `HH:mm`. Recorded for planned visits that
+   * have a booked appointment; carried through when the visit is completed.
+   */
+  time?: string
 }

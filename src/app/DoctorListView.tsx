@@ -81,7 +81,7 @@ export function DoctorListView({ onSelect }: { onSelect: (doctorId: number) => v
           {filtered.map((overview) => (
             <li
               key={overview.doctorId}
-              className="relative flex cursor-pointer items-center gap-3 px-4 py-3 transition hover:bg-slate-800/40 sm:justify-between"
+              className="relative flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition hover:bg-slate-800/40"
             >
               <button
                 type="button"

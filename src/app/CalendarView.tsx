@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { buildMonthGrid, groupFollowUpsByDate, groupVisitsByDate, toISODate } from '../domain/calendar'
-import type { Visit } from '../domain/types'
+import { buildMonthGrid, groupPlannedVisitsByDate, groupVisitsByDate, toISODate } from '../domain/calendar'
+import type { Visit, VisitStatus } from '../domain/types'
 import { visits as visitsRepo } from '../data/repositories'
 import { useApp } from './AppProvider'
+import { RegionCombobox } from './RegionCombobox'
 
 /** Preset outcomes offered as quick choices; a custom choice is also possible. */
 const OUTCOMES = ['Order placed', 'Follow-up needed', 'No interest']
@@ -37,7 +38,9 @@ export function CalendarView() {
   const [notes, setNotes] = useState('')
   const [outcome, setOutcome] = useState('')
   const [customOutcome, setCustomOutcome] = useState(false)
-  const [followUpDate, setFollowUpDate] = useState('')
+  const [formStatus, setFormStatus] = useState<VisitStatus>('completed')
+  const [visitTime, setVisitTime] = useState('')
+  const [nextVisitDate, setNextVisitDate] = useState('')
   const [orderPlaced, setOrderPlaced] = useState(false)
   const [orderProduct, setOrderProduct] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
@@ -90,8 +93,8 @@ export function CalendarView() {
     [visits, visibleDoctors],
   )
 
-  const followUpsByDate = useMemo(
-    () => groupFollowUpsByDate(visits, visibleDoctors),
+  const plannedByDate = useMemo(
+    () => groupPlannedVisitsByDate(visits, visibleDoctors),
     [visits, visibleDoctors],
   )
 
@@ -123,17 +126,30 @@ export function CalendarView() {
     setMonth(d.getMonth() + 1)
   }
 
-  function resetForm() {
+  function resetForm(date: string | null = selectedDate) {
     setEditingId(null)
     setFormRegionFilter('all')
     setDoctorId('')
     setNotes('')
     setOutcome('')
     setCustomOutcome(false)
-    setFollowUpDate('')
+    setFormStatus(defaultStatusFor(date))
+    setVisitTime('')
+    setNextVisitDate('')
     setOrderPlaced(false)
     setOrderProduct('')
     setFormError(null)
+  }
+
+  /** Future calendar cells default to a planned visit; past/today to completed. */
+  function defaultStatusFor(date: string | null): VisitStatus {
+    if (date && date > todayIso) return 'planned'
+    return 'completed'
+  }
+
+  function openDay(date: string) {
+    setSelectedDate(date)
+    resetForm(date)
   }
 
   function closePanel() {
@@ -154,7 +170,8 @@ export function CalendarView() {
       setOutcome(visit.outcome)
       setCustomOutcome(true)
     }
-    setFollowUpDate(visit.followUpDate ?? '')
+    setFormStatus(visit.status ?? 'completed')
+    setVisitTime(visit.time ?? '')
     setOrderPlaced(visit.orderPlaced)
     setOrderProduct(visit.orderProduct ?? '')
     setFormError(null)
@@ -162,23 +179,68 @@ export function CalendarView() {
 
   async function submitVisit() {
     if (!doctorId) {
-      setFormError('Choose a doctor to log the visit.')
+      setFormError(
+        formStatus === 'planned'
+          ? 'Choose a doctor to plan this visit.'
+          : 'Choose a doctor to log the visit.',
+      )
       return
     }
-    const payload: Omit<Visit, 'id'> = {
-      doctorId: Number(doctorId),
-      date: selectedDate!,
-      notes,
-      outcome,
-      followUpDate: followUpDate || undefined,
-      orderPlaced,
-      orderProduct: orderPlaced && orderProduct.trim() ? orderProduct.trim() : undefined,
-    }
+
+    // Planned visits carry only what is known ahead of time: doctor, notes,
+    // and an optional booked time. Completed visits carry the full outcome.
+    const payload: Omit<Visit, 'id'> =
+      formStatus === 'planned'
+        ? {
+            doctorId: Number(doctorId),
+            date: selectedDate!,
+            notes,
+            outcome: '',
+            orderPlaced: false,
+            status: 'planned',
+            time: visitTime.trim() || undefined,
+          }
+        : {
+            doctorId: Number(doctorId),
+            date: selectedDate!,
+            notes,
+            outcome,
+            orderPlaced,
+            orderProduct:
+              orderPlaced && orderProduct.trim() ? orderProduct.trim() : undefined,
+            status: 'completed',
+            time: visitTime.trim() || undefined,
+          }
 
     if (editingId !== null) {
       await visitsRepo.update(editingId, payload)
     } else {
       await visitsRepo.add(payload)
+    }
+
+    // Q21-b2: a completed visit may nominate its next visit date. That creates
+    // a real planned-visit record — idempotently (one plan per doctor+date).
+    if (
+      formStatus === 'completed' &&
+      nextVisitDate &&
+      nextVisitDate > (selectedDate ?? '')
+    ) {
+      const alreadyPlanned = visits.some(
+        (visit) =>
+          visit.status === 'planned' &&
+          visit.doctorId === Number(doctorId) &&
+          visit.date === nextVisitDate,
+      )
+      if (!alreadyPlanned) {
+        await visitsRepo.add({
+          doctorId: Number(doctorId),
+          date: nextVisitDate,
+          notes: '',
+          outcome: '',
+          orderPlaced: false,
+          status: 'planned',
+        })
+      }
     }
 
     resetForm()
@@ -256,14 +318,17 @@ export function CalendarView() {
         <div className="grid grid-cols-7 gap-1">
           {grid.map((cell) => {
             const labels = byDate.get(cell.date) ?? []
-            const followUps = followUpsByDate.get(cell.date) ?? []
+            const planned = plannedByDate.get(cell.date) ?? []
             const isToday = cell.date === todayIso
+            // Q19: a plan is "overdue" (amber) from the day after its date;
+            // a plan due today stays teal-dashed and actionable.
+            const plannedOverdue = cell.date < todayIso
             return (
               <button
                 key={cell.date}
                 type="button"
                 disabled={!cell.inCurrentMonth}
-                onClick={() => setSelectedDate(cell.date)}
+                onClick={() => openDay(cell.date)}
                 className={`relative flex min-h-16 flex-col items-start rounded-lg border p-1 text-left transition ${
                   !cell.inCurrentMonth
                     ? 'cursor-default border-transparent text-slate-700'
@@ -294,19 +359,24 @@ export function CalendarView() {
                     )}
                   </div>
                 )}
-                {followUps.length > 0 && (
+                {planned.length > 0 && (
                   <div className="mt-0.5 w-full space-y-0.5">
-                    {followUps.slice(0, 2).map((label) => (
+                    {planned.slice(0, 2).map((label) => (
                       <div
-                        key={`fu-${label.doctorId}`}
-                        className="w-full truncate rounded bg-amber-600/20 px-1 text-[10px] leading-4 text-amber-200"
+                        key={`planned-${label.visitId ?? `${label.doctorId}-${cell.date}`}`}
+                        className={`w-full truncate rounded border border-dashed px-1 text-[10px] leading-4 ${
+                          plannedOverdue
+                            ? 'border-amber-600/60 bg-amber-600/10 text-amber-200'
+                            : 'border-teal-600/60 bg-teal-600/5 text-teal-200'
+                        }`}
                       >
-                        ↻ {label.doctorName}
+                        {label.time ? `🕐 ${label.time} ` : ''}
+                        {label.doctorName}
                       </div>
                     ))}
-                    {followUps.length > 2 && (
+                    {planned.length > 2 && (
                       <div className="px-1 text-[10px] leading-4 text-slate-400">
-                        +{followUps.length - 2} more
+                        +{planned.length - 2} more
                       </div>
                     )}
                   </div>
@@ -319,14 +389,21 @@ export function CalendarView() {
 
       {panelShown && (
         <div className="fixed inset-0 z-20 flex items-end justify-center bg-slate-950/70 sm:items-center">
-          <div className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-slate-700 bg-slate-900 p-5 sm:rounded-2xl">
+          <div
+            className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-slate-700 bg-slate-900 p-5 sm:rounded-2xl"
+            style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
+          >
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-slate-100">
                   {formatFullDate(selectedDate!)}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  {editingId !== null ? 'Editing visit' : 'Log a visit'}
+                  {editingId !== null
+                    ? 'Editing visit'
+                    : formStatus === 'planned'
+                      ? 'Plan a visit'
+                      : 'Log a visit'}
                 </p>
               </div>
               <button
@@ -350,6 +427,17 @@ export function CalendarView() {
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-slate-100">
                           {doctorName ?? 'Unknown doctor'}
+                          {visit.status === 'planned' && (
+                            <span
+                              className={`ml-2 rounded-full border border-dashed px-2 py-0.5 text-[10px] font-medium ${
+                                visit.date < todayIso
+                                  ? 'border-amber-600/60 text-amber-300'
+                                  : 'border-teal-600/60 text-teal-300'
+                              }`}
+                            >
+                              {visit.date < todayIso ? 'Overdue plan' : 'Planned'}
+                            </span>
+                          )}
                         </p>
                         {visit.outcome && (
                           <p className="mt-0.5 text-xs text-teal-300">{visit.outcome}</p>
@@ -365,8 +453,12 @@ export function CalendarView() {
                           </p>
                         )}
                         <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
-                          {visit.followUpDate && <span>Follow-up {visit.followUpDate}</span>}
-                          <span>{visit.orderPlaced ? 'Order placed' : 'No order'}</span>
+                          {visit.time && <span>🕐 {visit.time}</span>}
+                          {visit.status === 'planned' ? (
+                            <span>Planned visit</span>
+                          ) : (
+                            <span>{visit.orderPlaced ? 'Order placed' : 'No order'}</span>
+                          )}
                         </div>
                       </div>
                       <div className="flex shrink-0 gap-2">
@@ -405,12 +497,39 @@ export function CalendarView() {
             )}
 
             <div className="mt-4 space-y-3">
+              {/* Mode toggle: default is date-driven (future day → planned),
+                  with a visible override (Q5). */}
+              <div className="flex gap-1 rounded-xl border border-slate-800 bg-slate-950/60 p-1">
+                <button
+                  type="button"
+                  onClick={() => setFormStatus('completed')}
+                  className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                    formStatus === 'completed'
+                      ? 'bg-teal-600/20 text-teal-200'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Log visit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormStatus('planned')}
+                  className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                    formStatus === 'planned'
+                      ? 'bg-teal-600/20 text-teal-200'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Planning
+                </button>
+              </div>
+
               <label className="block">
                 <span className="text-xs font-medium text-slate-400">Doctor</span>
-                <select
+                <RegionCombobox
+                  regions={state.regions}
                   value={formRegionFilter}
-                  onChange={(event) => {
-                    const next = event.target.value === 'all' ? 'all' : Number(event.target.value)
+                  onChange={(next) => {
                     setFormRegionFilter(next)
                     if (next !== 'all') {
                       const selectedDoctor = state.doctors.find((d) => d.id === Number(doctorId))
@@ -419,17 +538,7 @@ export function CalendarView() {
                       }
                     }
                   }}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
-                >
-                  <option value="all">All regions</option>
-                  {[...state.regions]
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((region) => (
-                      <option key={region.id} value={region.id}>
-                        {region.name}
-                      </option>
-                    ))}
-                </select>
+                />
                 <select
                   value={doctorId}
                   onChange={(event) => setDoctorId(event.target.value)}
@@ -444,9 +553,25 @@ export function CalendarView() {
                 </select>
               </label>
 
-              <label className="block">
-                <span className="text-xs font-medium text-slate-400">Outcome</span>
-                <select
+              {/* Booked time: native time input, planned visits only (Q13). */}
+              {formStatus === 'planned' && (
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-400">
+                    Booked time (optional)
+                  </span>
+                  <input
+                    type="time"
+                    value={visitTime}
+                    onChange={(event) => setVisitTime(event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
+                  />
+                </label>
+              )}
+
+              {formStatus === 'completed' && (
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-400">Outcome</span>
+                  <select
                   value={customOutcome ? CUSTOM_OUTCOME : outcome}
                   onChange={(event) => {
                     const value = event.target.value
@@ -468,16 +593,17 @@ export function CalendarView() {
                   ))}
                   <option value={CUSTOM_OUTCOME}>Other…</option>
                 </select>
-                {customOutcome && (
-                  <input
-                    type="text"
-                    value={outcome}
-                    onChange={(event) => setOutcome(event.target.value)}
-                    placeholder="Describe the outcome…"
-                    className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-teal-600"
-                  />
-                )}
-              </label>
+                  {customOutcome && (
+                    <input
+                      type="text"
+                      value={outcome}
+                      onChange={(event) => setOutcome(event.target.value)}
+                      placeholder="Describe the outcome…"
+                      className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-teal-600"
+                    />
+                  )}
+                </label>
+              )}
 
               <label className="block">
                 <span className="text-xs font-medium text-slate-400">Notes</span>
@@ -485,32 +611,47 @@ export function CalendarView() {
                   value={notes}
                   onChange={(event) => setNotes(event.target.value)}
                   rows={3}
-                  placeholder="What was discussed…"
+                  placeholder={
+                    formStatus === 'planned'
+                      ? 'What to discuss…'
+                      : 'What was discussed…'
+                  }
                   className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-teal-600"
                 />
               </label>
 
-              <label className="block">
-                <span className="text-xs font-medium text-slate-400">Follow-up date (optional)</span>
-                <input
-                  type="date"
-                  value={followUpDate}
-                  onChange={(event) => setFollowUpDate(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
-                />
-              </label>
+              {/* Q21-b2: a completed visit can nominate its next visit date,
+                  which creates a real planned-visit record. */}
+              {formStatus === 'completed' && (
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-400">
+                    Next visit date (optional)
+                  </span>
+                  <input
+                    type="date"
+                    value={nextVisitDate}
+                    onChange={(event) => setNextVisitDate(event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
+                  />
+                  <span className="mt-1 block text-[11px] text-slate-500">
+                    Creates a planned visit for this doctor on that date.
+                  </span>
+                </label>
+              )}
 
-              <label className="flex items-center gap-2 text-sm text-slate-200">
-                <input
-                  type="checkbox"
-                  checked={orderPlaced}
-                  onChange={(event) => setOrderPlaced(event.target.checked)}
-                  className="h-4 w-4 rounded border-slate-600 bg-slate-950 accent-teal-600"
-                />
-                An order was placed on this visit
-              </label>
+              {formStatus === 'completed' && (
+                <label className="flex items-center gap-2 text-sm text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={orderPlaced}
+                    onChange={(event) => setOrderPlaced(event.target.checked)}
+                    className="h-4 w-4 rounded border-slate-600 bg-slate-950 accent-teal-600"
+                  />
+                  An order was placed on this visit
+                </label>
+              )}
 
-              {orderPlaced && (
+              {formStatus === 'completed' && orderPlaced && (
                 <label className="block">
                   <span className="text-xs font-medium text-slate-400">Product ordered</span>
                   <input
@@ -529,7 +670,7 @@ export function CalendarView() {
                 {editingId !== null && (
                   <button
                     type="button"
-                    onClick={resetForm}
+                    onClick={() => resetForm()}
                     className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
                   >
                     Cancel
@@ -540,7 +681,11 @@ export function CalendarView() {
                   onClick={() => void submitVisit()}
                   className="rounded-lg border border-teal-600 bg-teal-600/10 px-4 py-2 text-sm font-medium text-teal-200 transition hover:bg-teal-600/20"
                 >
-                  {editingId !== null ? 'Save changes' : 'Save visit'}
+                  {editingId !== null
+                    ? 'Save changes'
+                    : formStatus === 'planned'
+                      ? 'Save plan'
+                      : 'Save visit'}
                 </button>
               </div>
             </div>

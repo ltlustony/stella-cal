@@ -16,6 +16,15 @@ export interface DoctorLabel {
   doctorName: string
 }
 
+/** A planned visit shown on a day, carrying its record id and booked time. */
+export interface PlannedVisitLabel {
+  visitId: number | null
+  doctorId: number
+  doctorName: string
+  /** Optional booked time of day, `HH:mm`. */
+  time?: string
+}
+
 /** The day-of-week column to start the grid on. 1 = Monday (ISO-style). */
 const WEEK_START = 1
 
@@ -60,9 +69,11 @@ export function buildMonthGrid(year: number, month: number): CalendarCell[] {
 }
 
 /**
- * Groups visits by date, resolving each visit's doctor name and region so the
- * calendar can render doctor labels. Visits whose doctor is no longer present
- * are dropped. Stable ordering follows the input visits array.
+ * Groups completed visits by date, resolving each visit's doctor name so the
+ * calendar can render solid doctor labels. Planned visits are excluded — they
+ * surface through {@link groupPlannedVisitsByDate} instead. Visits whose
+ * doctor is no longer present are dropped. Stable ordering follows the input
+ * visits array.
  */
 export function groupVisitsByDate(
   visits: Visit[],
@@ -75,6 +86,7 @@ export function groupVisitsByDate(
 
   const byDate = new Map<string, DoctorLabel[]>()
   for (const visit of visits) {
+    if (visit.status === 'planned') continue
     const doctor = doctorById.get(visit.doctorId)
     if (!doctor || doctor.id === undefined) continue
 
@@ -89,33 +101,35 @@ export function groupVisitsByDate(
 }
 
 /**
- * Groups upcoming follow-ups by their due date, resolving doctor names so the
- * calendar can surface a planned future visit. A follow-up is a visit that
- * carries a `followUpDate`; only that future date is mapped (not the visit's
- * own `date`). Visits without a follow-up date, or whose doctor is missing, are
- * dropped.
+ * Groups planned visits by their visit date, resolving doctor names so the
+ * calendar can surface dashed planned labels (amber-styled by the view once
+ * the plan's date has passed). Completed visits are excluded. Visits whose
+ * doctor is missing are dropped. Each label carries the record id so the view
+ * can edit or delete the plan, and its booked time when set.
  */
-export function groupFollowUpsByDate(
+export function groupPlannedVisitsByDate(
   visits: Visit[],
   doctors: Doctor[],
-): Map<string, DoctorLabel[]> {
+): Map<string, PlannedVisitLabel[]> {
   const doctorById = new Map<number, Doctor>()
   for (const doctor of doctors) {
     if (doctor.id !== undefined) doctorById.set(doctor.id, doctor)
   }
 
-  const byDate = new Map<string, DoctorLabel[]>()
+  const byDate = new Map<string, PlannedVisitLabel[]>()
   for (const visit of visits) {
-    if (!visit.followUpDate) continue
+    if (visit.status !== 'planned') continue
     const doctor = doctorById.get(visit.doctorId)
     if (!doctor || doctor.id === undefined) continue
 
-    const list = byDate.get(visit.followUpDate) ?? []
+    const list = byDate.get(visit.date) ?? []
     list.push({
+      visitId: visit.id ?? null,
       doctorId: doctor.id,
       doctorName: doctor.name,
+      time: visit.time,
     })
-    byDate.set(visit.followUpDate, list)
+    byDate.set(visit.date, list)
   }
   return byDate
 }

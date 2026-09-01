@@ -78,6 +78,21 @@ describe('latestVisitDate', () => {
   it('returns null when there are no visits', () => {
     expect(latestVisitDate([])).toBeNull()
   })
+
+  it('excludes planned visits (a visit not yet done is not a last visit)', () => {
+    const visits: Visit[] = [
+      { doctorId: 1, date: '2026-04-15', notes: '', outcome: '', orderPlaced: false },
+      { doctorId: 1, date: '2026-09-01', notes: '', outcome: '', orderPlaced: false, status: 'planned' },
+    ]
+    expect(latestVisitDate(visits)).toBe('2026-04-15')
+  })
+
+  it('returns null when only planned visits exist', () => {
+    const visits: Visit[] = [
+      { doctorId: 1, date: '2026-09-01', notes: '', outcome: '', orderPlaced: false, status: 'planned' },
+    ]
+    expect(latestVisitDate(visits)).toBeNull()
+  })
 })
 
 describe('buildDoctorOverviews', () => {

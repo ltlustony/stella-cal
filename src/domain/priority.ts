@@ -1,18 +1,18 @@
-import { toISODate } from './calendar'
 import type { DoctorOverview, Trend } from './derived'
-import type { Doctor, Visit } from './types'
 
 /**
- * Priority list + follow-up reminders (issue 06). Pure functions that turn the
- * doctor-list overviews and visit records into "who to visit next" signals:
- * a ranked priority list blending visit gap and purchase trend, plus the
- * follow-up reminders that surface when a visit's follow-up date arrives.
+ * Priority list (issue 06). Pure functions that turn the doctor-list
+ * overviews into "who to visit next" signals: a ranked priority list blending
+ * visit gap and purchase trend.
+ *
+ * Follow-up reminders used to live here too; they were folded into stored
+ * planned visits, which the calendar surfaces directly (ADR-007).
  *
  * Everything here is a pure function of its inputs — nothing reads storage.
  * The priority list deliberately consumes {@link DoctorOverview} (already
  * built by {@link import('./derived').buildDoctorOverviews}) rather than raw
  * records, so the trend and last-visit logic stays in one seam (derived.ts)
- * and this module only adds ranking + reminders on top.
+ * and this module only adds ranking on top.
  */
 
 const MS_PER_DAY = 86_400_000
@@ -97,63 +97,4 @@ export function buildPriorityList(
       } satisfies PriorityEntry
     })
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
-}
-
-/** A follow-up whose date has arrived (today or earlier). */
-export interface FollowUpReminder {
-  visitId: number | null
-  doctorId: number
-  doctorName: string
-  /** The follow-up's due date (`YYYY-MM-DD`). */
-  dueDate: string
-  /** Whole days overdue, `0` when due today. */
-  daysOverdue: number
-}
-
-/**
- * Surfaces follow-up reminders whose date has arrived: every visit with a
- * `followUpDate` on or before today. Visits without a follow-up date, future
- * follow-ups, and follow-ups whose doctor no longer exists are dropped.
- * Ordered by due date (soonest first), then doctor name.
- */
-export function dueFollowUps(
-  visits: Visit[],
-  doctors: Doctor[],
-  now: Date = new Date(),
-): FollowUpReminder[] {
-  const doctorById = new Map<number, Doctor>()
-  for (const doctor of doctors) {
-    if (doctor.id !== undefined) doctorById.set(doctor.id, doctor)
-  }
-
-  const today = toISODate(now)
-  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const reminders: FollowUpReminder[] = []
-
-  for (const visit of visits) {
-    if (!visit.followUpDate) continue
-    if (visit.followUpDate > today) continue // not due yet
-
-    const doctor = doctorById.get(visit.doctorId)
-    if (!doctor || doctor.id === undefined) continue
-
-    const due = new Date(`${visit.followUpDate}T00:00:00`)
-    const daysOverdue = Math.max(
-      0,
-      Math.round((todayMidnight.getTime() - due.getTime()) / MS_PER_DAY),
-    )
-
-    reminders.push({
-      visitId: visit.id ?? null,
-      doctorId: doctor.id,
-      doctorName: doctor.name,
-      dueDate: visit.followUpDate,
-      daysOverdue,
-    })
-  }
-
-  reminders.sort(
-    (a, b) => a.dueDate.localeCompare(b.dueDate) || a.doctorName.localeCompare(b.doctorName),
-  )
-  return reminders
 }

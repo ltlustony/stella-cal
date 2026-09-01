@@ -82,13 +82,18 @@ export function purchaseTrend(
   return 'flat'
 }
 
-/** The most recent visit date for a doctor, or `null` if none. */
+/**
+ * The most recent visit date for a doctor, or `null` if none. Planned visits
+ * are excluded — a visit that hasn't happened yet must not count as a visit
+ * (see ADR-007).
+ */
 export function latestVisitDate(visits: Visit[]): string | null {
-  if (visits.length === 0) return null
-  return visits.reduce<string | null>((latest, visit) => {
-    if (latest === null || visit.date > latest) return visit.date
-    return latest
-  }, null)
+  let latest: string | null = null
+  for (const visit of visits) {
+    if (visit.status === 'planned') continue
+    if (latest === null || visit.date > latest) latest = visit.date
+  }
+  return latest
 }
 
 export interface BuildDoctorOverviewsInput {

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { AppProvider, useApp } from './app/AppProvider'
 import { CalendarView } from './app/CalendarView'
 import { DoctorListView } from './app/DoctorListView'
@@ -13,7 +13,7 @@ const DoctorDetailView = lazy(() =>
   import('./app/DoctorDetailView').then((m) => ({ default: m.DoctorDetailView })),
 )
 
-type Tab = 'calendar' | 'overview' | 'priority' | 'doctors' | 'settings'
+type Tab = 'calendar' | 'priority' | 'doctors' | 'settings'
 
 function Shell() {
   const { state, refreshOverviews } = useApp()
@@ -30,17 +30,22 @@ function Shell() {
   >(null)
   const [importError, setImportError] = useState<string | null>(null)
 
+  const hasData = state.doctors.length > 0
+  const startImport = () => inputRef.current?.click()
+
   const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
     setIsImporting(true)
     setImportError(null)
+    setImportSummary(null)
 
     try {
       const result = await importWorkbookFromFile(file)
       setImportSummary(result.summary)
       setTab('doctors')
+      setSelectedDoctorId(null)
       await refreshOverviews()
     } catch (error) {
       setImportError(error instanceof Error ? error.message : 'Import failed.')
@@ -49,6 +54,13 @@ function Shell() {
       event.target.value = ''
     }
   }
+
+  // Success feedback auto-dismisses; errors persist until dismissed.
+  useEffect(() => {
+    if (!importSummary) return
+    const timer = window.setTimeout(() => setImportSummary(null), 8000)
+    return () => window.clearTimeout(timer)
+  }, [importSummary])
 
   if (state.status === 'loading') {
     return (
@@ -72,27 +84,50 @@ function Shell() {
     )
   }
 
-  const doctorCount = state.doctors.length
-  const regionCount = state.regions.length
-
   return (
     <div className="min-h-dvh bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 bg-slate-900/70 px-4 py-3 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between">
+      {/* Shared Excel import input: mounted once at shell level so the import
+          flow works from every tab (the file input is never unmounted). */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        onChange={handleImport}
+      />
+
+      <header
+        className="sticky top-0 z-30 border-b border-slate-800 bg-slate-900/80 backdrop-blur"
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      >
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <h1 className="text-xl font-semibold tracking-tight text-teal-400">
             Stella-Cal
           </h1>
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            className="rounded-lg border border-teal-600 bg-teal-600/10 px-3 py-2 text-sm font-medium text-teal-200 transition hover:bg-teal-600/20"
-          >
-            {isImporting ? 'Importing…' : 'Import Excel'}
-          </button>
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-6">
+      <main
+        className="mx-auto max-w-3xl px-4 py-6"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        {/* First-run banner: shown until an Excel file has been imported. */}
+        {!hasData && (
+          <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-teal-700 bg-teal-950/30 px-4 py-3 text-sm text-teal-200">
+            <span>
+              No doctors or regions yet. Import your Excel file to get started.
+            </span>
+            <button
+              type="button"
+              onClick={startImport}
+              disabled={isImporting}
+              className="shrink-0 rounded-lg border border-teal-600 px-3 py-1.5 font-medium transition hover:bg-teal-600/20 disabled:opacity-50"
+            >
+              {isImporting ? 'Importing…' : 'Import Excel'}
+            </button>
+          </div>
+        )}
+
         <nav className="mb-5 flex gap-1 rounded-xl border border-slate-800 bg-slate-900/60 p-1">
           <button
             type="button"
@@ -104,17 +139,6 @@ function Shell() {
             }`}
           >
             Calendar
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('overview')}
-            className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
-              tab === 'overview'
-                ? 'bg-teal-600/20 text-teal-200'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Overview
           </button>
           <button
             type="button"
@@ -154,7 +178,7 @@ function Shell() {
           </button>
         </nav>
 
-        {isBackupOverdue(lastBackupAt) && (
+        {isBackupOverdue(lastBackupAt) && hasData && (
           <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-amber-700 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">
             <span>
               No visit backup in the last 7 days. Back up to keep your visit
@@ -170,10 +194,53 @@ function Shell() {
           </div>
         )}
 
+        {/* Global import feedback: same banner regardless of which button
+            started the import. Success auto-dismisses; errors persist. */}
+        {isImporting && (
+          <div className="mb-5 rounded-xl border border-teal-700 bg-teal-950/20 px-4 py-3 text-sm text-teal-200">
+            Parsing and validating the Excel workbook…
+          </div>
+        )}
+        {importError && (
+          <div className="mb-5 flex items-start justify-between gap-3 rounded-xl border border-red-800 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+            <span>{importError}</span>
+            <button
+              type="button"
+              onClick={() => setImportError(null)}
+              className="shrink-0 rounded-md border border-red-800 px-2 py-0.5 text-xs transition hover:bg-red-900/40"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        {importSummary && (
+          <div className="mb-5 flex items-start justify-between gap-3 rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-sm text-slate-200">
+            <div>
+              <p className="font-medium text-teal-300">Import complete</p>
+              <ul className="mt-1 space-y-0.5 text-slate-300">
+                <li>Regions: {importSummary.regions}</li>
+                <li>Doctors: {importSummary.doctors}</li>
+                <li>Purchases: {importSummary.purchases}</li>
+              </ul>
+            </div>
+            <button
+              type="button"
+              onClick={() => setImportSummary(null)}
+              className="shrink-0 rounded-md border border-slate-700 px-2 py-0.5 text-xs transition hover:bg-slate-800"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {tab === 'calendar' ? (
           <CalendarView />
         ) : tab === 'settings' ? (
-          <SettingsView onBackedUp={setLastBackupAt} />
+          <SettingsView
+            onBackedUp={setLastBackupAt}
+            onStartImport={startImport}
+            isImporting={isImporting}
+          />
         ) : tab === 'priority' ? (
           <PriorityListView
             onSelect={(doctorId) => {
@@ -181,63 +248,6 @@ function Shell() {
               setTab('doctors')
             }}
           />
-        ) : tab === 'overview' ? (
-          <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-            <h2 className="text-lg font-medium">Welcome</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Your data is stored privately on this device and works offline.
-            </p>
-
-            <dl className="mt-5 grid grid-cols-2 gap-4 text-center">
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                <dt className="text-xs uppercase tracking-wide text-slate-500">
-                  Doctors
-                </dt>
-                <dd className="mt-1 text-2xl font-semibold text-teal-400">
-                  {doctorCount}
-                </dd>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                <dt className="text-xs uppercase tracking-wide text-slate-500">
-                  Regions
-                </dt>
-                <dd className="mt-1 text-2xl font-semibold text-teal-400">
-                  {regionCount}
-                </dd>
-              </div>
-            </dl>
-
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleImport}
-            />
-
-            {isImporting && (
-              <div className="mt-5 rounded-xl border border-teal-700 bg-teal-950/20 p-3 text-sm text-teal-200">
-                Parsing and validating the Excel workbook…
-              </div>
-            )}
-
-            {importError && (
-              <div className="mt-5 rounded-xl border border-red-800 bg-red-950/30 p-3 text-sm text-red-200">
-                {importError}
-              </div>
-            )}
-
-            {importSummary && (
-              <div className="mt-5 rounded-xl border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
-                <p className="font-medium text-teal-300">Import complete</p>
-                <ul className="mt-2 space-y-1 text-slate-300">
-                  <li>Regions: {importSummary.regions}</li>
-                  <li>Doctors: {importSummary.doctors}</li>
-                  <li>Purchases: {importSummary.purchases}</li>
-                </ul>
-              </div>
-            )}
-          </section>
         ) : selectedDoctorId !== null ? (
           <Suspense
             fallback={

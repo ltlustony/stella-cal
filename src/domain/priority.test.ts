@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { DoctorOverview } from './derived'
-import type { Doctor, Visit } from './types'
 import {
   PRIORITY_WEIGHTS,
   buildPriorityList,
   daysSinceLastVisit,
-  dueFollowUps,
   priorityScore,
 } from './priority'
 
@@ -89,41 +87,5 @@ describe('buildPriorityList', () => {
     ]
     const list = buildPriorityList(overviews, NOW)
     expect(list.map((e) => e.doctorId)).toEqual([1, 2])
-  })
-})
-
-describe('dueFollowUps', () => {
-  const doctor: Doctor = { id: 1, name: '陳醫生診所', regionId: 1 }
-
-  const visit = (overrides: Partial<Visit>): Visit => ({
-    doctorId: 1,
-    date: '2026-08-01',
-    notes: '',
-    outcome: '',
-    orderPlaced: false,
-    ...overrides,
-  })
-
-  it('surfaces follow-ups due today or earlier, soonest first', () => {
-    const visits = [
-      visit({ id: 1, followUpDate: '2026-08-30' }),
-      visit({ id: 2, followUpDate: '2026-08-31' }),
-      visit({ id: 3, followUpDate: '2026-09-05' }), // future → dropped
-    ]
-    const reminders = dueFollowUps(visits, [doctor], NOW)
-
-    expect(reminders.map((r) => r.visitId)).toEqual([1, 2])
-    expect(reminders[0].daysOverdue).toBe(1)
-    expect(reminders[1].daysOverdue).toBe(0)
-  })
-
-  it('ignores visits without a follow-up date', () => {
-    const reminders = dueFollowUps([visit({}), visit({ followUpDate: '2026-09-01' })], [doctor], NOW)
-    expect(reminders).toHaveLength(0)
-  })
-
-  it('skips follow-ups whose doctor no longer exists', () => {
-    const reminders = dueFollowUps([visit({ followUpDate: '2026-08-01', doctorId: 999 })], [doctor], NOW)
-    expect(reminders).toHaveLength(0)
   })
 })

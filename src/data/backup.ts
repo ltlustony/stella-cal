@@ -1,7 +1,7 @@
 import type { Visit } from '../domain/types'
 import { planVisitMerge, visits } from './repositories'
 
-const BACKUP_VERSION = 1
+const BACKUP_VERSION = 2
 const BACKUP_KIND = 'stella-cal-visits'
 const LAST_BACKUP_KEY = 'stella-cal:lastBackupAt'
 const REMINDER_MS = 7 * 24 * 60 * 60 * 1000
@@ -65,12 +65,17 @@ export async function downloadVisitsBackup(): Promise<void> {
 function isVisit(value: unknown): value is Visit {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
+  const statusOk =
+    v.status === undefined || v.status === 'planned' || v.status === 'completed'
+  const timeOk = v.time === undefined || typeof v.time === 'string'
   return (
     typeof v.doctorId === 'number' &&
     typeof v.date === 'string' &&
     typeof v.notes === 'string' &&
     typeof v.outcome === 'string' &&
-    typeof v.orderPlaced === 'boolean'
+    typeof v.orderPlaced === 'boolean' &&
+    statusOk &&
+    timeOk
   )
 }
 

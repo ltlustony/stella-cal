@@ -136,7 +136,7 @@ describe('visits repository', () => {
       ...before,
       outcome: 'Order placed',
       orderPlaced: true,
-      followUpDate: '2024-04-01',
+      time: '14:30',
     })
 
     const all = await visits.all()
@@ -144,7 +144,27 @@ describe('visits repository', () => {
     expect(all[0].id).toBe(before.id)
     expect(all[0].outcome).toBe('Order placed')
     expect(all[0].orderPlaced).toBe(true)
-    expect(all[0].followUpDate).toBe('2024-04-01')
+    expect(all[0].time).toBe('14:30')
+  })
+
+  it('add stores planned visits with status and booked time', async () => {
+    const region = await regions.upsert('九龍塘')
+    const doctor = await doctors.upsert('陳醫生診所', region.id!)
+
+    await visits.add({
+      doctorId: doctor.id!,
+      date: '2026-09-10',
+      notes: 'plan',
+      outcome: '',
+      orderPlaced: false,
+      status: 'planned',
+      time: '10:00',
+    })
+
+    const all = await visits.all()
+    expect(all).toHaveLength(1)
+    expect(all[0].status).toBe('planned')
+    expect(all[0].time).toBe('10:00')
   })
 
   it('remove deletes a visit by id, leaving other visits intact', async () => {
