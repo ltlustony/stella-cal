@@ -109,6 +109,12 @@ export const visits = {
     return { ...visit, id }
   },
 
+  async addMany(entries: Omit<Visit, 'id'>[]): Promise<Visit[]> {
+    if (entries.length === 0) return []
+    const keys = await getDb().visits.bulkAdd(entries, { allKeys: true })
+    return entries.map((e, i) => ({ ...e, id: keys[i] as number }))
+  },
+
   /**
    * Merge a backup set into the store: add only records whose `id` isn't
    * already present (idempotent, never overwrites). Returns added/skipped

@@ -1,4 +1,4 @@
-import type { Doctor, Visit } from './types'
+import type { Doctor, Visit, VisitStatus } from './types'
 
 /** One cell of a month grid. `inCurrentMonth === false` marks a padding day. */
 export interface CalendarCell {
@@ -132,4 +132,43 @@ export function groupPlannedVisitsByDate(
     byDate.set(visit.date, list)
   }
   return byDate
+}
+
+/**
+ * Determine which doctors should receive a new bare visit record and which
+ * are skipped because they already have a same-day record of the same status.
+ * A record whose `status` is `undefined` is treated as `'completed'` (ADR-007).
+ * Input order is preserved in `toCreate`. (REQ-04, REQ-05)
+ */
+export function planBulkCreation(
+  doctorIds: number[],
+  existing: Visit[],
+  date: string,
+  status: VisitStatus,
+): { toCreate: Omit<Visit, 'id'>[]; skipped: number } {
+  const toCreate: Omit<Visit, 'id'>[] = []
+  let skipped = 0
+
+  for (const doctorId of doctorIds) {
+    const conflict = existing.some(
+      (v) =>
+        v.doctorId === doctorId &&
+        v.date === date &&
+        (v.status ?? 'completed') === status,
+    )
+    if (conflict) {
+      skipped += 1
+    } else {
+      toCreate.push({
+        doctorId,
+        date,
+        notes: '',
+        outcome: '',
+        orderPlaced: false,
+        status,
+      })
+    }
+  }
+
+  return { toCreate, skipped }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { buildMonthGrid, groupPlannedVisitsByDate, groupVisitsByDate, toISODate } from '../domain/calendar'
+import { buildMonthGrid, groupPlannedVisitsByDate, groupVisitsByDate, planBulkCreation, toISODate } from '../domain/calendar'
 import type { Visit, VisitStatus } from '../domain/types'
 import { visits as visitsRepo } from '../data/repositories'
 import { useApp } from './AppProvider'
@@ -44,6 +44,9 @@ export function CalendarView() {
   const [orderPlaced, setOrderPlaced] = useState(false)
   const [orderProduct, setOrderProduct] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
+  const [bulkMode, setBulkMode] = useState(false)
+  const [bulkSelected, setBulkSelected] = useState<number[]>([])
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -139,6 +142,9 @@ export function CalendarView() {
     setOrderPlaced(false)
     setOrderProduct('')
     setFormError(null)
+    setBulkMode(false)
+    setBulkSelected([])
+    setBulkMessage(null)
   }
 
   /** Future calendar cells default to a planned visit; past/today to completed. */
@@ -159,6 +165,7 @@ export function CalendarView() {
 
   function beginEdit(visit: Visit) {
     setEditingId(visit.id ?? null)
+    setBulkMode(false)
     const doctor = state.doctors.find((d) => d.id === visit.doctorId)
     setFormRegionFilter(doctor ? doctor.regionId : 'all')
     setDoctorId(String(visit.doctorId))
@@ -244,6 +251,20 @@ export function CalendarView() {
     }
 
     resetForm()
+    await reloadVisits()
+    await refreshOverviews()
+  }
+
+  async function submitBulk() {
+    if (!selectedDate || bulkSelected.length === 0) return
+    const result = planBulkCreation(bulkSelected, visits, selectedDate, formStatus)
+    await visitsRepo.addMany(result.toCreate)
+    setBulkMessage(
+      result.skipped > 0
+        ? `${result.toCreate.length} created, ${result.skipped} skipped`
+        : `${result.toCreate.length} created`,
+    )
+    setBulkSelected([])
     await reloadVisits()
     await refreshOverviews()
   }
@@ -524,144 +545,250 @@ export function CalendarView() {
                 </button>
               </div>
 
-              <label className="block">
-                <span className="text-xs font-medium text-slate-400">Doctor</span>
-                <RegionCombobox
-                  regions={state.regions}
-                  value={formRegionFilter}
-                  onChange={(next) => {
-                    setFormRegionFilter(next)
-                    if (next !== 'all') {
-                      const selectedDoctor = state.doctors.find((d) => d.id === Number(doctorId))
-                      if (doctorId && selectedDoctor && selectedDoctor.regionId !== next) {
-                        setDoctorId('')
-                      }
-                    }
-                  }}
-                />
-                <select
-                  value={doctorId}
-                  onChange={(event) => setDoctorId(event.target.value)}
-                  className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
-                >
-                  <option value="">Choose a doctor…</option>
-                  {doctorOptions.map((doctor) => (
-                    <option key={doctor.id} value={doctor.id}>
-                      {doctor.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {/* Booked time: native time input, planned visits only (Q13). */}
-              {formStatus === 'planned' && (
-                <label className="block">
-                  <span className="text-xs font-medium text-slate-400">
-                    Booked time (optional)
-                  </span>
-                  <input
-                    type="time"
-                    value={visitTime}
-                    onChange={(event) => setVisitTime(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
-                  />
-                </label>
-              )}
-
-              {formStatus === 'completed' && (
-                <label className="block">
-                  <span className="text-xs font-medium text-slate-400">Outcome</span>
-                  <select
-                  value={customOutcome ? CUSTOM_OUTCOME : outcome}
-                  onChange={(event) => {
-                    const value = event.target.value
-                    if (value === CUSTOM_OUTCOME) {
-                      setCustomOutcome(true)
-                      setOutcome('')
-                    } else {
-                      setCustomOutcome(false)
-                      setOutcome(value)
-                    }
-                  }}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
-                >
-                  <option value="">— Select outcome —</option>
-                  {OUTCOMES.map((preset) => (
-                    <option key={preset} value={preset}>
-                      {preset}
-                    </option>
-                  ))}
-                  <option value={CUSTOM_OUTCOME}>Other…</option>
-                </select>
-                  {customOutcome && (
-                    <input
-                      type="text"
-                      value={outcome}
-                      onChange={(event) => setOutcome(event.target.value)}
-                      placeholder="Describe the outcome…"
-                      className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-teal-600"
+              {/* Bulk switch — only shown when creating a new entry (REQ-01) */}
+              {editingId === null && (
+                <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                  <span className="text-sm font-medium text-slate-300">Bulk by region</span>
+                  <button
+                    type="button"
+                    aria-pressed={bulkMode}
+                    aria-label="Bulk by region"
+                    onClick={() => {
+                      setBulkMode((m) => !m)
+                      setBulkSelected([])
+                      setBulkMessage(null)
+                    }}
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition ${
+                      bulkMode ? 'border-teal-500 bg-teal-600' : 'border-slate-600 bg-slate-700'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${
+                        bulkMode ? 'translate-x-1.5' : 'translate-x-5'
+                      }`}
+                      style={{ transform: bulkMode ? 'translateX(4px)' : 'translateX(16px)' }}
                     />
+                  </button>
+                </div>
+              )}
+
+              {bulkMode && editingId === null ? (
+                <>
+                  {/* Region selector for bulk — keeps formRegionFilter (REQ-03) */}
+                  <div>
+                    <span className="block text-xs font-medium text-slate-400 mb-1">Region</span>
+                    <RegionCombobox
+                      regions={state.regions}
+                      value={formRegionFilter}
+                      onChange={(next) => {
+                        setFormRegionFilter(next)
+                        setBulkSelected([])
+                      }}
+                    />
+                  </div>
+
+                  {formRegionFilter === 'all' ? (
+                    <p className="text-sm text-slate-400">Choose a region to list doctors</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {/* Select all header */}
+                      {(() => {
+                        const regionDoctors = doctorsByName.filter(
+                          (d) => d.regionId === formRegionFilter && d.id !== undefined,
+                        )
+                        const allSelected =
+                          regionDoctors.length > 0 &&
+                          regionDoctors.every((d) => bulkSelected.includes(d.id!))
+                        return (
+                          <>
+                            <label className="flex items-center gap-2 text-sm text-slate-300 font-medium py-1">
+                              <input
+                                type="checkbox"
+                                checked={allSelected}
+                                onChange={(e) =>
+                                  setBulkSelected(
+                                    e.target.checked
+                                      ? regionDoctors.map((d) => d.id!)
+                                      : [],
+                                  )
+                                }
+                                className="h-4 w-4 rounded border-slate-600 bg-slate-950 accent-teal-600"
+                              />
+                              Select all
+                            </label>
+                            {regionDoctors.map((doctor) => (
+                              <label
+                                key={doctor.id}
+                                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-200 hover:bg-slate-800/40"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={bulkSelected.includes(doctor.id!)}
+                                  onChange={(e) =>
+                                    setBulkSelected((prev) =>
+                                      e.target.checked
+                                        ? [...prev, doctor.id!].sort((a, b) => {
+                                            const na = doctorsByName.find((d) => d.id === a)?.name ?? ''
+                                            const nb = doctorsByName.find((d) => d.id === b)?.name ?? ''
+                                            return na.localeCompare(nb)
+                                          })
+                                        : prev.filter((id) => id !== doctor.id!),
+                                    )
+                                  }
+                                  className="h-4 w-4 rounded border-slate-600 bg-slate-950 accent-teal-600"
+                                />
+                                {doctor.name}
+                              </label>
+                            ))}
+                          </>
+                        )
+                      })()}
+                    </div>
                   )}
-                </label>
-              )}
 
-              <label className="block">
-                <span className="text-xs font-medium text-slate-400">Notes</span>
-                <textarea
-                  value={notes}
-                  onChange={(event) => setNotes(event.target.value)}
-                  rows={3}
-                  placeholder={
-                    formStatus === 'planned'
-                      ? 'What to discuss…'
-                      : 'What was discussed…'
-                  }
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-teal-600"
-                />
-              </label>
+                  {bulkMessage && <p className="text-sm text-teal-300">{bulkMessage}</p>}
+                </>
+              ) : (
+                <>
+                  <label className="block">
+                    <span className="text-xs font-medium text-slate-400">Doctor</span>
+                    <RegionCombobox
+                      regions={state.regions}
+                      value={formRegionFilter}
+                      onChange={(next) => {
+                        setFormRegionFilter(next)
+                        if (next !== 'all') {
+                          const selectedDoctor = state.doctors.find((d) => d.id === Number(doctorId))
+                          if (doctorId && selectedDoctor && selectedDoctor.regionId !== next) {
+                            setDoctorId('')
+                          }
+                        }
+                      }}
+                    />
+                    <select
+                      value={doctorId}
+                      onChange={(event) => setDoctorId(event.target.value)}
+                      className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
+                    >
+                      <option value="">Choose a doctor…</option>
+                      {doctorOptions.map((doctor) => (
+                        <option key={doctor.id} value={doctor.id}>
+                          {doctor.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-              {/* Q21-b2: a completed visit can nominate its next visit date,
-                  which creates a real planned-visit record. */}
-              {formStatus === 'completed' && (
-                <label className="block">
-                  <span className="text-xs font-medium text-slate-400">
-                    Next visit date (optional)
-                  </span>
-                  <input
-                    type="date"
-                    value={nextVisitDate}
-                    onChange={(event) => setNextVisitDate(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
-                  />
-                  <span className="mt-1 block text-[11px] text-slate-500">
-                    Creates a planned visit for this doctor on that date.
-                  </span>
-                </label>
-              )}
+                  {/* Booked time: native time input, planned visits only (Q13). */}
+                  {formStatus === 'planned' && (
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-400">
+                        Booked time (optional)
+                      </span>
+                      <input
+                        type="time"
+                        value={visitTime}
+                        onChange={(event) => setVisitTime(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
+                      />
+                    </label>
+                  )}
 
-              {formStatus === 'completed' && (
-                <label className="flex items-center gap-2 text-sm text-slate-200">
-                  <input
-                    type="checkbox"
-                    checked={orderPlaced}
-                    onChange={(event) => setOrderPlaced(event.target.checked)}
-                    className="h-4 w-4 rounded border-slate-600 bg-slate-950 accent-teal-600"
-                  />
-                  An order was placed on this visit
-                </label>
-              )}
+                  {formStatus === 'completed' && (
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-400">Outcome</span>
+                      <select
+                        value={customOutcome ? CUSTOM_OUTCOME : outcome}
+                        onChange={(event) => {
+                          const value = event.target.value
+                          if (value === CUSTOM_OUTCOME) {
+                            setCustomOutcome(true)
+                            setOutcome('')
+                          } else {
+                            setCustomOutcome(false)
+                            setOutcome(value)
+                          }
+                        }}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
+                      >
+                        <option value="">— Select outcome —</option>
+                        {OUTCOMES.map((preset) => (
+                          <option key={preset} value={preset}>
+                            {preset}
+                          </option>
+                        ))}
+                        <option value={CUSTOM_OUTCOME}>Other…</option>
+                      </select>
+                      {customOutcome && (
+                        <input
+                          type="text"
+                          value={outcome}
+                          onChange={(event) => setOutcome(event.target.value)}
+                          placeholder="Describe the outcome…"
+                          className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-teal-600"
+                        />
+                      )}
+                    </label>
+                  )}
 
-              {formStatus === 'completed' && orderPlaced && (
-                <label className="block">
-                  <span className="text-xs font-medium text-slate-400">Product ordered</span>
-                  <input
-                    type="text"
-                    value={orderProduct}
-                    onChange={(event) => setOrderProduct(event.target.value)}
-                    placeholder="e.g. Actein 600mg"
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-teal-600"
-                  />
-                </label>
+                  <label className="block">
+                    <span className="text-xs font-medium text-slate-400">Notes</span>
+                    <textarea
+                      value={notes}
+                      onChange={(event) => setNotes(event.target.value)}
+                      rows={3}
+                      placeholder={
+                        formStatus === 'planned'
+                          ? 'What to discuss…'
+                          : 'What was discussed…'
+                      }
+                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-teal-600"
+                    />
+                  </label>
+
+                  {/* Q21-b2: a completed visit can nominate its next visit date. */}
+                  {formStatus === 'completed' && (
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-400">
+                        Next visit date (optional)
+                      </span>
+                      <input
+                        type="date"
+                        value={nextVisitDate}
+                        onChange={(event) => setNextVisitDate(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-600"
+                      />
+                      <span className="mt-1 block text-[11px] text-slate-500">
+                        Creates a planned visit for this doctor on that date.
+                      </span>
+                    </label>
+                  )}
+
+                  {formStatus === 'completed' && (
+                    <label className="flex items-center gap-2 text-sm text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={orderPlaced}
+                        onChange={(event) => setOrderPlaced(event.target.checked)}
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 accent-teal-600"
+                      />
+                      An order was placed on this visit
+                    </label>
+                  )}
+
+                  {formStatus === 'completed' && orderPlaced && (
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-400">Product ordered</span>
+                      <input
+                        type="text"
+                        value={orderProduct}
+                        onChange={(event) => setOrderProduct(event.target.value)}
+                        placeholder="e.g. Actein 600mg"
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-teal-600"
+                      />
+                    </label>
+                  )}
+                </>
               )}
 
               {formError && <p className="text-sm text-red-300">{formError}</p>}
@@ -676,17 +803,30 @@ export function CalendarView() {
                     Cancel
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => void submitVisit()}
-                  className="rounded-lg border border-teal-600 bg-teal-600/10 px-4 py-2 text-sm font-medium text-teal-200 transition hover:bg-teal-600/20"
-                >
-                  {editingId !== null
-                    ? 'Save changes'
-                    : formStatus === 'planned'
-                      ? 'Save plan'
-                      : 'Save visit'}
-                </button>
+                {bulkMode && editingId === null ? (
+                  <button
+                    type="button"
+                    disabled={bulkSelected.length === 0}
+                    onClick={() => void submitBulk()}
+                    className="rounded-lg border border-teal-600 bg-teal-600/10 px-4 py-2 text-sm font-medium text-teal-200 transition hover:bg-teal-600/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {formStatus === 'planned'
+                      ? `Create ${bulkSelected.length} plans`
+                      : `Create ${bulkSelected.length} visits`}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void submitVisit()}
+                    className="rounded-lg border border-teal-600 bg-teal-600/10 px-4 py-2 text-sm font-medium text-teal-200 transition hover:bg-teal-600/20"
+                  >
+                    {editingId !== null
+                      ? 'Save changes'
+                      : formStatus === 'planned'
+                        ? 'Save plan'
+                        : 'Save visit'}
+                  </button>
+                )}
               </div>
             </div>
           </div>

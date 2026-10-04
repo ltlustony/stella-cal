@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildMonthGrid, groupPlannedVisitsByDate, groupVisitsByDate } from './calendar'
+import { buildMonthGrid, groupPlannedVisitsByDate, groupVisitsByDate, planBulkCreation } from './calendar'
 import type { Doctor, Visit } from './types'
 
 describe('buildMonthGrid', () => {
@@ -147,5 +147,77 @@ describe('groupPlannedVisitsByDate', () => {
       },
     ]
     expect(groupPlannedVisitsByDate(visits, doctors).has('2026-09-05')).toBe(false)
+  })
+})
+
+describe('planBulkCreation', () => {
+  const DATE = '2026-08-15'
+
+  const completedVisit = (doctorId: number, date = DATE, id?: number): Visit => ({
+    ...(id !== undefined ? { id } : {}),
+    doctorId,
+    date,
+    notes: '',
+    outcome: '',
+    orderPlaced: false,
+    status: 'completed',
+  })
+
+  const plannedVisit = (doctorId: number, date = DATE, id?: number): Visit => ({
+    ...(id !== undefined ? { id } : {}),
+    doctorId,
+    date,
+    notes: '',
+    outcome: '',
+    orderPlaced: false,
+    status: 'planned',
+  })
+
+  // (a) empty store → creates all
+  it('creates bare records for every doctor when store is empty', () => {
+    const { toCreate, skipped } = planBulkCreation([1, 2, 3], [], DATE, 'completed')
+    expect(skipped).toBe(0)
+    expect(toCreate).toHaveLength(3)
+    expect(toCreate[0]).toEqual({
+      doctorId: 1, date: DATE, notes: '', outcome: '', orderPlaced: false, status: 'completed',
+    })
+  })
+
+  // (b) status-specific skip
+  it('skips same-day same-status only — a completed visit does not block a planned record', () => {
+    const existing = [completedVisit(1)]
+    const { toCreate, skipped } = planBulkCreation([1], existing, DATE, 'planned')
+    expect(skipped).toBe(0)
+    expect(toCreate).toHaveLength(1)
+  })
+
+  it('skips a doctor who already has a same-day record of the same status', () => {
+    const existing = [plannedVisit(1)]
+    const { skipped, toCreate } = planBulkCreation([1], existing, DATE, 'planned')
+    expect(skipped).toBe(1)
+    expect(toCreate).toHaveLength(0)
+  })
+
+  // (c) status: undefined treated as completed
+  it('treats a record with status: undefined as completed', () => {
+    const legacyVisit: Visit = { doctorId: 1, date: DATE, notes: '', outcome: '', orderPlaced: false }
+    const { skipped } = planBulkCreation([1], [legacyVisit], DATE, 'completed')
+    expect(skipped).toBe(1)
+  })
+
+  // (d) other dates don't affect skipping
+  it('does not skip a doctor whose visit is on a different date', () => {
+    const existing = [completedVisit(1, '2026-08-14')]
+    const { skipped, toCreate } = planBulkCreation([1], existing, DATE, 'completed')
+    expect(skipped).toBe(0)
+    expect(toCreate).toHaveLength(1)
+  })
+
+  // (e) skipped count and order preserved
+  it('counts skipped correctly and preserves input order', () => {
+    const existing = [completedVisit(2)]
+    const { toCreate, skipped } = planBulkCreation([1, 2, 3], existing, DATE, 'completed')
+    expect(skipped).toBe(1)
+    expect(toCreate.map((r) => r.doctorId)).toEqual([1, 3])
   })
 })

@@ -192,4 +192,29 @@ describe('visits repository', () => {
     const onFifth = await visits.byDate('2024-03-05')
     expect(onFifth).toHaveLength(2)
   })
+
+  it('addMany inserts 3 entries and returns them with distinct ids readable via all()', async () => {
+    const region = await regions.upsert('九龍塘')
+    const d1 = await doctors.upsert('陳醫生診所', region.id!)
+    const d2 = await doctors.upsert('李醫生', region.id!)
+    const d3 = await doctors.upsert('王醫生', region.id!)
+
+    const entries = [
+      { doctorId: d1.id!, date: '2026-08-15', notes: '', outcome: '', orderPlaced: false, status: 'planned' as const },
+      { doctorId: d2.id!, date: '2026-08-15', notes: '', outcome: '', orderPlaced: false, status: 'planned' as const },
+      { doctorId: d3.id!, date: '2026-08-15', notes: '', outcome: '', orderPlaced: false, status: 'planned' as const },
+    ]
+
+    const inserted = await visits.addMany(entries)
+    expect(inserted).toHaveLength(3)
+    expect(new Set(inserted.map((v) => v.id)).size).toBe(3)
+
+    const all = await visits.all()
+    expect(all).toHaveLength(3)
+  })
+
+  it('addMany returns [] for an empty input without hitting the store', async () => {
+    const result = await visits.addMany([])
+    expect(result).toEqual([])
+  })
 })
